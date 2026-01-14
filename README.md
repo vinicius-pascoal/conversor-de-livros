@@ -329,6 +329,39 @@ docker-compose restart
 
 Sinta-se à vontade para abrir issues e pull requests!
 
+## 📋 TODO List
+
+### 🔧 Melhorias em Desenvolvimento
+
+- [ ] **Ajuste preciso de posicionamento de imagens**
+  - Melhorar algoritmo de posicionamento de imagens no EPUB
+  - Calcular posição exata baseada em coordenadas do PDF
+  - Usar análise de texto ao redor da imagem para posicionamento mais preciso
+  - Considerar uso de bibliotecas como `pdf.js` para extração de coordenadas
+  - Testar com diferentes tipos de PDFs (acadêmicos, livros, revistas)
+
+- [ ] **Tradutor automático de PDF para EPUB**
+  - Implementar detecção automática de idioma do PDF
+  - Adicionar tradução automática para pt-BR durante conversão
+  - Integrar API de tradução (Google Translate, DeepL ou similar)
+  - Opção de selecionar idioma de origem e destino manualmente
+  - Preservar formatação e estrutura durante tradução
+  - Adicionar toggle na interface para ativar/desativar tradução
+  - Cache de traduções para otimizar performance
+  - Suporte a múltiplos idiomas de saída
+
+### 🎯 Roadmap Futuro
+
+- [ ] Suporte a outros formatos de entrada (DOCX, TXT, MOBI)
+- [ ] Editor EPUB integrado para ajustes pós-conversão
+- [ ] Prévia do EPUB antes do download
+- [ ] Histórico de conversões
+- [ ] Processamento em lote (múltiplos PDFs)
+- [ ] API REST documentada com Swagger
+- [ ] Testes automatizados (unit + integration)
+- [ ] CI/CD com GitHub Actions
+
+
 ## 📄 Licença
 
 ISC
