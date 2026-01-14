@@ -1,6 +1,12 @@
 import fs from 'fs'
+import path from 'path'
+import os from 'os'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import pdfParse from 'pdf-parse'
 import Epub from 'epub-gen'
+
+const execFileAsync = promisify(execFile)
 
 // Garante que etapas críticas não fiquem penduradas indefinidamente
 async function runWithTimeout(promise, ms, label) {
@@ -16,8 +22,11 @@ async function runWithTimeout(promise, ms, label) {
 export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, options = {}) {
   try {
     const fastMode = options.fastMode === true
+    let coverPath = options.coverPath || null
+    const keepImages = options.keepImages !== false
     console.log('🔄 Iniciando conversão...')
     console.log('⚡ fastMode:', fastMode)
+    console.log('🖼️ keepImages:', keepImages)
     console.time('pdf-total')
 
     // Ler o PDF
@@ -61,12 +70,40 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
       console.timeEnd('split-chapters')
     }
 
+    // Extrair imagens do PDF (opcional)
+    let assetsDir = null
+    let extractedImages = []
+    if (keepImages) {
+      console.time('pdf-images')
+      try {
+        const imagesResult = await extractImages(pdfPath)
+        assetsDir = imagesResult.assetsDir
+        extractedImages = imagesResult.images
+        console.log('🖼️ Imagens extraídas:', extractedImages.length)
+        if (!coverPath && extractedImages.length > 0) {
+          coverPath = extractedImages[0]
+          console.log('📔 Capa definida pela primeira imagem extraída')
+        }
+      } catch (err) {
+        console.error('⚠️ Falha ao extrair imagens:', err.message)
+      }
+      console.timeEnd('pdf-images')
+    }
+
+    // Anexa capítulo de galeria de imagens, se existirem
+    if (extractedImages.length > 0) {
+      const imgsHtml = extractedImages
+        .map((imgPath) => `<div style="text-align:center;margin:16px 0;"><img src="${imgPath}" alt="Imagem do PDF" style="max-width:100%;" /></div>`)
+        .join('\n')
+      chapters.push({ title: 'Imagens', data: imgsHtml })
+    }
+
     // Configuração do EPUB
     const epubOptions = {
       title: title,
       author: 'Autor Desconhecido',
       publisher: 'Conversor PDF-EPUB',
-      cover: '', // Você pode adicionar uma capa se quiser
+      cover: coverPath || '',
       content: chapters,
       lang: 'pt',
       tocTitle: 'Índice',
@@ -89,6 +126,7 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
       const fallbackOptions = {
         title: title,
         author: 'Autor Desconhecido',
+        cover: coverPath || '',
         content: [{ title: 'Conteúdo', data: `<pre>${escapeHtml(text)}</pre>` }],
         lang: 'pt'
       }
@@ -99,12 +137,28 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     console.timeEnd('pdf-total')
     console.log('✨ EPUB gerado com sucesso!')
 
-    return epubPath
+    return { epubPath, assetsDir }
 
   } catch (error) {
     console.error('Erro na conversão:', error)
     throw new Error(`Falha ao converter PDF para EPUB: ${error.message}`)
   }
+}
+
+async function extractImages(pdfPath) {
+  // Usa pdfimages (Poppler) para extrair imagens como PNG
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'pdfimgs-'))
+  const baseOut = path.join(tempDir, 'img')
+  await execFileAsync('pdfimages', ['-png', pdfPath, baseOut])
+
+  // Coletar arquivos gerados
+  const files = await fs.promises.readdir(tempDir)
+  const images = files
+    .filter((f) => f.startsWith('img'))
+    .map((f) => path.join(tempDir, f))
+    .sort()
+
+  return { assetsDir: tempDir, images }
 }
 
 function splitIntoChapters(text, numPages) {

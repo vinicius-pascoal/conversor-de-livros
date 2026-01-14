@@ -57,9 +57,13 @@ router.post('/convert', upload.fields([
     const fastMode = req.query.mode
       ? req.query.mode === 'fast'
       : (process.env.FAST_MODE_DEFAULT === 'true')
+    const keepImages = req.query.keepImages
+      ? ['true', '1', 'yes', 'on'].includes(String(req.query.keepImages).toLowerCase())
+      : true
 
     console.log('📄 Arquivo recebido:', pdfFile.originalname, 'tamanho:', pdfFile.size, 'bytes')
     console.log('⚡ Modo rápido:', fastMode)
+    console.log('🖼️ Manter imagens:', keepImages)
 
     const pdfPath = pdfFile.path
     const epubPath = pdfPath.replace('.pdf', '.epub')
@@ -68,7 +72,7 @@ router.post('/convert', upload.fields([
     // Converter PDF para EPUB
     console.time('convert-route')
     console.log('➡️ Chamando convertPdfToEpub')
-    await convertPdfToEpub(pdfPath, epubPath, pdfFile.originalname, { fastMode, coverPath })
+    const result = await convertPdfToEpub(pdfPath, epubPath, pdfFile.originalname, { fastMode, coverPath, keepImages })
     console.log('⬅️ Retorno convertPdfToEpub')
     console.timeEnd('convert-route')
 
@@ -80,6 +84,7 @@ router.post('/convert', upload.fields([
       fs.unlink(pdfPath, () => { })
       fs.unlink(epubPath, () => { })
       if (coverPath) fs.unlink(coverPath, () => { })
+      if (result?.assetsDir) fs.rm(result.assetsDir, { recursive: true, force: true }, () => { })
 
       if (err) {
         console.error('Erro ao enviar arquivo:', err)

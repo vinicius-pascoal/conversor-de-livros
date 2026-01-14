@@ -5,10 +5,12 @@ import axios from 'axios'
 
 export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [coverFile, setCoverFile] = useState<File | null>(null)
   const [isConverting, setIsConverting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const coverInputRef = useRef<HTMLInputElement>(null)
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
@@ -25,6 +27,16 @@ export default function Home() {
     const file = e.target.files?.[0]
     if (file) {
       handleFileSelect(file)
+    }
+  }
+
+  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && file.type.startsWith('image/')) {
+      setCoverFile(file)
+      setMessage(null)
+    } else if (file) {
+      setMessage({ type: 'error', text: 'Capa precisa ser imagem (JPG ou PNG).' })
     }
   }
 
@@ -55,6 +67,9 @@ export default function Home() {
 
     const formData = new FormData()
     formData.append('pdf', selectedFile)
+    if (coverFile) {
+      formData.append('cover', coverFile)
+    }
 
     try {
       const response = await axios.post(`${apiUrl}/api/convert`, formData, {
@@ -75,6 +90,7 @@ export default function Home() {
 
       setMessage({ type: 'success', text: 'Conversão concluída! O download começará automaticamente.' })
       setSelectedFile(null)
+      setCoverFile(null)
     } catch (error) {
       console.error('Erro na conversão:', error)
       setMessage({
@@ -141,6 +157,44 @@ export default function Home() {
           </button>
         </div>
       )}
+
+      <div className="cover-section">
+        <div className="cover-header">
+          <h3>Capa (opcional)</h3>
+          <button
+            type="button"
+            className="secondary-btn"
+            onClick={() => coverInputRef.current?.click()}
+          >
+            Escolher capa
+          </button>
+        </div>
+        <p className="cover-hint">Formatos: JPG ou PNG. Será usada como capa do EPUB.</p>
+        <input
+          ref={coverInputRef}
+          type="file"
+          accept="image/png,image/jpeg"
+          onChange={handleCoverChange}
+          className="file-input"
+        />
+        {coverFile && (
+          <div className="selected-cover">
+            <div className="file-info">
+              <div className="file-icon">🖼️</div>
+              <div className="file-details">
+                <h3>{coverFile.name}</h3>
+                <p>{formatFileSize(coverFile.size)}</p>
+              </div>
+            </div>
+            <button
+              className="remove-btn"
+              onClick={() => setCoverFile(null)}
+            >
+              Remover
+            </button>
+          </div>
+        )}
+      </div>
 
       <button
         className="convert-btn"
