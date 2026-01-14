@@ -24,18 +24,22 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     const fastMode = options.fastMode === true
     let coverPath = options.coverPath || null
     const keepImages = options.keepImages !== false
+    const progress = typeof options.progress === 'function' ? options.progress : null
     console.log('🔄 Iniciando conversão...')
     console.log('⚡ fastMode:', fastMode)
     console.log('🖼️ keepImages:', keepImages)
     console.time('pdf-total')
+    progress?.({ type: 'log', message: 'Iniciando conversão' })
 
     // Ler o PDF
     console.time('pdf-read')
     const dataBuffer = await fs.promises.readFile(pdfPath)
+    progress?.({ type: 'log', message: 'PDF carregado em memória' })
     console.timeEnd('pdf-read')
 
     console.time('pdf-parse')
     const pdfData = await runWithTimeout(pdfParse(dataBuffer), 30000, 'pdf-parse')
+    progress?.({ type: 'log', message: `PDF parse concluído: ${dataBuffer.length} bytes` })
     console.timeEnd('pdf-parse')
 
     console.log('📖 PDF lido com sucesso')
@@ -55,47 +59,46 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     // Extrair título do nome do arquivo ou usar texto
     const title = originalFilename.replace('.pdf', '') || 'Documento Convertido'
 
-    console.time('split-chapters')
-    let chapters
-    if (fastMode) {
-      // Modo rápido: um capítulo único para reduzir tempo
-      chapters = [{ title: 'Conteúdo', data: `<p>${text.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>` }]
-      console.timeEnd('split-chapters')
-    } else {
-      chapters = await runWithTimeout(
-        Promise.resolve().then(() => splitIntoChapters(text, pdfData.numpages)),
-        5000,
-        'split-chapters'
-      )
-      console.timeEnd('split-chapters')
-    }
-
-    // Extrair imagens do PDF (opcional)
+    // Extrair imagens do PDF (opcional) com informação de página
     let assetsDir = null
     let extractedImages = []
     if (keepImages) {
       console.time('pdf-images')
+      progress?.({ type: 'phase', phase: 'extracting' })
       try {
-        const imagesResult = await extractImages(pdfPath)
+        const imagesResult = await extractImagesWithPages(pdfPath)
         assetsDir = imagesResult.assetsDir
         extractedImages = imagesResult.images
         console.log('🖼️ Imagens extraídas:', extractedImages.length)
+        progress?.({ type: 'log', message: `Imagens extraídas: ${extractedImages.length}` })
         if (!coverPath && extractedImages.length > 0) {
-          coverPath = extractedImages[0]
+          coverPath = extractedImages[0].path
           console.log('📔 Capa definida pela primeira imagem extraída')
+          progress?.({ type: 'log', message: 'Capa definida pela primeira imagem' })
         }
       } catch (err) {
         console.error('⚠️ Falha ao extrair imagens:', err.message)
+        progress?.({ type: 'log', message: `Falha ao extrair imagens: ${err.message}` })
       }
       console.timeEnd('pdf-images')
     }
 
-    // Anexa capítulo de galeria de imagens, se existirem
-    if (extractedImages.length > 0) {
-      const imgsHtml = extractedImages
-        .map((imgPath) => `<div style="text-align:center;margin:16px 0;"><img src="${imgPath}" alt="Imagem do PDF" style="max-width:100%;" /></div>`)
-        .join('\n')
-      chapters.push({ title: 'Imagens', data: imgsHtml })
+    // Criar capítulos com texto e imagens na ordem exata do PDF
+    console.time('split-chapters')
+    let chapters
+    if (fastMode) {
+      // Modo rápido: um capítulo único com imagens inseridas em ordem
+      progress?.({ type: 'phase', phase: 'processing' })
+      chapters = createChaptersWithImagesInOrder(text, extractedImages, pdfData.numpages, true)
+      console.timeEnd('split-chapters')
+    } else {
+      progress?.({ type: 'phase', phase: 'processing' })
+      chapters = await runWithTimeout(
+        Promise.resolve().then(() => createChaptersWithImagesInOrder(text, extractedImages, pdfData.numpages, false)),
+        5000,
+        'split-chapters'
+      )
+      console.timeEnd('split-chapters')
     }
 
     // Configuração do EPUB
@@ -115,6 +118,7 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     }
 
     console.log('📚 Gerando EPUB...')
+    progress?.({ type: 'phase', phase: 'generating' })
     console.time('epub-gen')
 
     try {
@@ -136,6 +140,8 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     console.timeEnd('epub-gen')
     console.timeEnd('pdf-total')
     console.log('✨ EPUB gerado com sucesso!')
+    progress?.({ type: 'phase', phase: 'complete' })
+    progress?.({ type: 'log', message: 'EPUB gerado com sucesso' })
 
     return { epubPath, assetsDir }
 
@@ -145,73 +151,130 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
   }
 }
 
-async function extractImages(pdfPath) {
-  // Usa pdfimages (Poppler) para extrair imagens como PNG
+async function extractImagesWithPages(pdfPath) {
+  // Primeiro, lista imagens com informações de página
+  const { stdout: listOutput } = await execFileAsync('pdfimages', ['-list', pdfPath])
+
+  // Parse da saída para obter páginas das imagens
+  const lines = listOutput.split('\n').slice(2) // Pula cabeçalho
+  const imagePages = []
+
+  for (const line of lines) {
+    if (line.trim()) {
+      const parts = line.trim().split(/\s+/)
+      if (parts.length >= 2) {
+        const pageNum = parseInt(parts[1])
+        if (!isNaN(pageNum)) {
+          imagePages.push(pageNum)
+        }
+      }
+    }
+  }
+
+  // Extrai as imagens
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'pdfimgs-'))
   const baseOut = path.join(tempDir, 'img')
   await execFileAsync('pdfimages', ['-png', pdfPath, baseOut])
 
-  // Coletar arquivos gerados
+  // Coletar arquivos gerados e associar com páginas
   const files = await fs.promises.readdir(tempDir)
-  const images = files
+  const imagePaths = files
     .filter((f) => f.startsWith('img'))
-    .map((f) => path.join(tempDir, f))
     .sort()
+
+  const images = imagePaths.map((file, idx) => ({
+    path: path.join(tempDir, file),
+    page: imagePages[idx] || 1
+  }))
 
   return { assetsDir: tempDir, images }
 }
 
-function splitIntoChapters(text, numPages) {
-  // Tentar dividir por quebras de página ou seções
-  const chapters = []
-
-  const safePages = numPages && numPages > 0 ? numPages : Math.max(Math.ceil(text.length / 2000), 1)
-
-  // Se o texto for muito pequeno, criar um único capítulo
-  if (text.length < 1000) {
-    return [{
-      title: 'Capítulo 1',
-      data: `<p>${text.replace(/\n/g, '</p><p>')}</p>`
-    }]
+function createChaptersWithImagesInOrder(text, images, totalPages, fastMode) {
+  if (!text || totalPages === 0) {
+    return [{ title: 'Conteúdo', data: `<p>${text.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>` }]
   }
 
-  // Dividir o texto em partes aproximadamente iguais baseado no número de páginas
-  const charsPerPage = Math.ceil(text.length / safePages)
-  let currentPos = 0
-  let chapterNum = 1
+  // Estima caracteres por página
+  const charsPerPage = Math.ceil(text.length / totalPages)
 
-  while (currentPos < text.length) {
-    let endPos = currentPos + charsPerPage * 5 // Agrupar ~5 páginas por capítulo
-    if (endPos > text.length) endPos = text.length
+  // Cria um mapa de página -> imagens
+  const imagesByPage = new Map()
+  for (const img of images) {
+    if (!imagesByPage.has(img.page)) {
+      imagesByPage.set(img.page, [])
+    }
+    imagesByPage.get(img.page).push(img)
+  }
 
-    // Tentar encontrar o fim de um parágrafo
-    const nextBreak = text.indexOf('\n\n', endPos - 100)
-    if (nextBreak !== -1 && nextBreak < endPos + 100) {
-      endPos = nextBreak
+  if (fastMode) {
+    // Modo rápido: um capítulo único com todas as imagens inseridas na ordem das páginas
+    let content = ''
+    let textPos = 0
+
+    for (let page = 1; page <= totalPages; page++) {
+      // Adiciona texto desta página
+      const pageStart = textPos
+      const pageEnd = Math.min(textPos + charsPerPage, text.length)
+      const pageText = text.substring(pageStart, pageEnd)
+
+      if (pageText.trim()) {
+        content += `<p>${pageText.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>\n`
+      }
+
+      // Adiciona imagens desta página (se houver)
+      if (imagesByPage.has(page)) {
+        for (const img of imagesByPage.get(page)) {
+          content += `<div style="text-align:center;margin:20px 0;page-break-inside:avoid;"><img src="${img.path}" alt="Imagem página ${page}" style="max-width:100%;height:auto;" /></div>\n`
+        }
+      }
+
+      textPos = pageEnd
     }
 
-    const chapterText = text.substring(currentPos, endPos).trim()
+    return [{ title: 'Conteúdo', data: content }]
+  } else {
+    // Modo normal: múltiplos capítulos (agrupa ~10 páginas por capítulo)
+    const pagesPerChapter = 10
+    const chapters = []
+    let textPos = 0
 
-    if (chapterText.length > 0) {
+    for (let chapterStart = 1; chapterStart <= totalPages; chapterStart += pagesPerChapter) {
+      const chapterEnd = Math.min(chapterStart + pagesPerChapter - 1, totalPages)
+      let chapterContent = ''
+
+      // Processa cada página do capítulo na ordem
+      for (let page = chapterStart; page <= chapterEnd; page++) {
+        const pageStart = textPos
+        const pageEnd = Math.min(textPos + charsPerPage, text.length)
+        const pageText = text.substring(pageStart, pageEnd)
+
+        if (pageText.trim()) {
+          chapterContent += `<p>${pageText.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>\n`
+        }
+
+        if (imagesByPage.has(page)) {
+          for (const img of imagesByPage.get(page)) {
+            chapterContent += `<div style="text-align:center;margin:20px 0;page-break-inside:avoid;"><img src="${img.path}" alt="Imagem página ${page}" style="max-width:100%;height:auto;" /></div>\n`
+          }
+        }
+
+        textPos = pageEnd
+      }
+
       chapters.push({
-        title: `Capítulo ${chapterNum}`,
-        data: `<p>${chapterText.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>`
+        title: `Capítulo ${chapters.length + 1}`,
+        data: chapterContent || '<p></p>'
       })
-      chapterNum++
     }
 
-    currentPos = endPos
-  }
+    // Caso não tenha sido possível compor capítulos, retorna conteúdo único
+    if (chapters.length === 0) {
+      return [{ title: 'Conteúdo', data: `<p>${text.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>` }]
+    }
 
-  // Se não conseguiu dividir em capítulos, criar um único
-  if (chapters.length === 0) {
-    chapters.push({
-      title: 'Conteúdo',
-      data: `<p>${text.replace(/\n/g, '</p><p>')}</p>`
-    })
+    return chapters
   }
-
-  return chapters
 }
 
 function escapeHtml(str) {
@@ -219,6 +282,6 @@ function escapeHtml(str) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
+    .replace(/\"/g, '&quot;')
     .replace(/'/g, '&#39;')
 }

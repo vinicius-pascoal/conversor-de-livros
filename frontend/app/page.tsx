@@ -1,18 +1,34 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
+
+type ConversionMode = 'fast' | 'full'
+type ConversionPhase = 'idle' | 'uploading' | 'extracting' | 'processing' | 'generating' | 'complete'
 
 export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [coverFile, setCoverFile] = useState<File | null>(null)
+  const [conversionMode, setConversionMode] = useState<ConversionMode>('fast')
   const [isConverting, setIsConverting] = useState(false)
+  const [conversionPhase, setConversionPhase] = useState<ConversionPhase>('idle')
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
+  const [progressLog, setProgressLog] = useState<string[]>([])
   const [isDragging, setIsDragging] = useState(false)
+  const [uploadPercent, setUploadPercent] = useState<number>(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+
+  const phaseLabels: Record<ConversionPhase, string> = {
+    idle: 'Pronto',
+    uploading: 'Enviando arquivo...',
+    extracting: 'Extraindo imagens...',
+    processing: 'Processando conteúdo...',
+    generating: 'Gerando EPUB...',
+    complete: 'Concluído!'
+  }
 
   const handleFileSelect = (file: File) => {
     if (file.type === 'application/pdf') {
@@ -27,16 +43,6 @@ export default function Home() {
     const file = e.target.files?.[0]
     if (file) {
       handleFileSelect(file)
-    }
-  }
-
-  const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file && file.type.startsWith('image/')) {
-      setCoverFile(file)
-      setMessage(null)
-    } else if (file) {
-      setMessage({ type: 'error', text: 'Capa precisa ser imagem (JPG ou PNG).' })
     }
   }
 
@@ -64,6 +70,9 @@ export default function Home() {
 
     setIsConverting(true)
     setMessage(null)
+    setConversionPhase('uploading')
+    setProgressLog([])
+    setUploadPercent(0)
 
     const formData = new FormData()
     formData.append('pdf', selectedFile)
@@ -71,13 +80,63 @@ export default function Home() {
       formData.append('cover', coverFile)
     }
 
+    // Debug: verificar o que está sendo enviado
+    console.log('📤 [FRONTEND] Enviando FormData:')
+    console.log('📤 [FRONTEND] - PDF:', selectedFile.name, selectedFile.size, 'bytes')
+    if (coverFile) console.log('📤 [FRONTEND] - Cover:', coverFile.name, coverFile.size, 'bytes')
+
     try {
-      const response = await axios.post(`${apiUrl}/api/convert`, formData, {
-        responseType: 'blob',
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      })
+      // Iniciar SSE de progresso
+      const jobId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto) ? (crypto as any).randomUUID() : String(Date.now())
+      console.log('📤 [FRONTEND] jobId gerado:', jobId)
+      console.log('📤 [FRONTEND] URL da API:', `${apiUrl}/api/convert?mode=${conversionMode}&jobId=${jobId}`)
+
+      const es = new EventSource(`${apiUrl}/api/progress/${jobId}`)
+
+      es.onerror = (err) => {
+        console.error('❌ [FRONTEND] Erro no EventSource:', err)
+        console.log('⚠️ [FRONTEND] Continuando sem SSE')
+        // Não fechar a conexão axios por causa de erro no SSE
+      }
+
+      es.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data)
+          console.log('📡 [FRONTEND] Evento SSE recebido:', data)
+          if (data.type === 'phase') {
+            setConversionPhase(data.phase as ConversionPhase)
+          } else if (data.type === 'log') {
+            setProgressLog(prev => [...prev, data.message])
+          } else if (data.type === 'done') {
+            es.close()
+          }
+        } catch (e) {
+          console.error('❌ [FRONTEND] Erro ao parsear evento SSE:', e)
+        }
+      }
+
+      console.log('📤 [FRONTEND] Iniciando POST com axios...')
+
+      const response = await axios.post(
+        `${apiUrl}/api/convert?mode=${conversionMode}&jobId=${jobId}`,
+        formData,
+        {
+          responseType: 'blob',
+          // Não definir Content-Type manualmente - deixar o axios adicionar o boundary automaticamente
+          onUploadProgress: (e) => {
+            if (e.total) {
+              const p = Math.round((e.loaded / e.total) * 100)
+              setUploadPercent(p)
+            }
+          }
+        }
+      )
+
+      console.log('✅ [FRONTEND] Resposta recebida do backend')
+      console.log('✅ [FRONTEND] Tamanho do EPUB:', response.data.size, 'bytes')
+
+      // Fechar EventSource
+      es.close()
 
       // Criar URL do blob e fazer download
       const url = window.URL.createObjectURL(new Blob([response.data]))
@@ -88,17 +147,26 @@ export default function Home() {
       link.click()
       link.remove()
 
+      setConversionPhase('complete')
       setMessage({ type: 'success', text: 'Conversão concluída! O download começará automaticamente.' })
-      setSelectedFile(null)
-      setCoverFile(null)
+      setProgressLog(prev => [...prev, 'Conversão concluída'])
+
+      // Reset após 2 segundos
+      setTimeout(() => {
+        setSelectedFile(null)
+        setCoverFile(null)
+        setConversionPhase('idle')
+        setIsConverting(false)
+      }, 2000)
     } catch (error) {
       console.error('Erro na conversão:', error)
+      setConversionPhase('idle')
+      setIsConverting(false)
       setMessage({
         type: 'error',
         text: 'Erro ao converter o arquivo. Por favor, tente novamente.'
       })
-    } finally {
-      setIsConverting(false)
+      setProgressLog(prev => [...prev, 'Erro ao converter o arquivo'])
     }
   }
 
@@ -174,7 +242,15 @@ export default function Home() {
           ref={coverInputRef}
           type="file"
           accept="image/png,image/jpeg"
-          onChange={handleCoverChange}
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file && file.type.startsWith('image/')) {
+              setCoverFile(file)
+              setMessage(null)
+            } else if (file) {
+              setMessage({ type: 'error', text: 'Capa precisa ser imagem (JPG ou PNG).' })
+            }
+          }}
           className="file-input"
         />
         {coverFile && (
@@ -196,6 +272,28 @@ export default function Home() {
         )}
       </div>
 
+      <div className="mode-selector">
+        <label htmlFor="mode-select">Modo de conversão:</label>
+        <div className="mode-options">
+          <button
+            className={`mode-btn ${conversionMode === 'fast' ? 'active' : ''}`}
+            onClick={() => setConversionMode('fast')}
+            disabled={isConverting}
+            title="Conversão mais rápida em um capítulo único"
+          >
+            ⚡ Rápido
+          </button>
+          <button
+            className={`mode-btn ${conversionMode === 'full' ? 'active' : ''}`}
+            onClick={() => setConversionMode('full')}
+            disabled={isConverting}
+            title="Conversão completa com múltiplos capítulos"
+          >
+            📖 Completo
+          </button>
+        </div>
+      </div>
+
       <button
         className="convert-btn"
         onClick={handleConvert}
@@ -205,9 +303,56 @@ export default function Home() {
       </button>
 
       {isConverting && (
-        <div className="loading">
-          <div className="loading-spinner"></div>
-          <div className="loading-text">Convertendo seu arquivo...</div>
+        <div className="conversion-progress">
+          <div className="progress-phases">
+            <div className={`phase ${conversionPhase === 'uploading' || (conversionPhase && conversionPhase !== 'idle') ? 'active' : ''}`}>
+              <div className="phase-icon">📤</div>
+              <div className="phase-label">Enviando</div>
+            </div>
+            <div className={`phase ${conversionPhase === 'extracting' || ['processing', 'generating', 'complete'].includes(conversionPhase) ? 'active' : ''}`}>
+              <div className="phase-icon">🖼️</div>
+              <div className="phase-label">Imagens</div>
+            </div>
+            <div className={`phase ${conversionPhase === 'processing' || ['generating', 'complete'].includes(conversionPhase) ? 'active' : ''}`}>
+              <div className="phase-icon">⚙️</div>
+              <div className="phase-label">Processando</div>
+            </div>
+            <div className={`phase ${conversionPhase === 'generating' || conversionPhase === 'complete' ? 'active' : ''}`}>
+              <div className="phase-icon">📦</div>
+              <div className="phase-label">Gerando</div>
+            </div>
+          </div>
+
+          <div className="progress-bar-container">
+            <div
+              className="progress-bar"
+              style={{
+                width: conversionPhase === 'uploading'
+                  ? `${Math.min(25, Math.max(0, uploadPercent / 4))}%`
+                  : conversionPhase === 'extracting' ? '50%'
+                    : conversionPhase === 'processing' ? '75%'
+                      : conversionPhase === 'generating' ? '90%'
+                        : '100%'
+              }}
+            />
+          </div>
+
+          <div className="progress-info">
+            <div className="progress-icon">
+              {conversionPhase === 'complete' ? '✅' : '⏳'}
+            </div>
+            <div className="progress-text">
+              {phaseLabels[conversionPhase]}
+            </div>
+          </div>
+
+          {progressLog.length > 0 && (
+            <div className="progress-logs">
+              {progressLog.slice(-5).map((l, idx) => (
+                <div key={idx} className="progress-log-item">{l}</div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
