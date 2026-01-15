@@ -152,41 +152,58 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
 }
 
 async function extractImagesWithPages(pdfPath) {
-  // Primeiro, lista imagens com informações de página
+  // Lista imagens com informações DETALHADAS: página, X, Y, largura, altura
   const { stdout: listOutput } = await execFileAsync('pdfimages', ['-list', pdfPath])
 
-  // Parse da saída para obter páginas das imagens
+  // Parse da saída para obter: página, posição X, Y, largura, altura
   const lines = listOutput.split('\n').slice(2) // Pula cabeçalho
-  const imagePages = []
+  const imageMetadata = []
 
   for (const line of lines) {
     if (line.trim()) {
       const parts = line.trim().split(/\s+/)
-      if (parts.length >= 2) {
+      // Formato: num page x-pos y-pos width height ...
+      if (parts.length >= 6) {
         const pageNum = parseInt(parts[1])
-        if (!isNaN(pageNum)) {
-          imagePages.push(pageNum)
+        const xPos = parseFloat(parts[2])
+        const yPos = parseFloat(parts[3])
+        const width = parseFloat(parts[4])
+        const height = parseFloat(parts[5])
+
+        if (!isNaN(pageNum) && !isNaN(yPos)) {
+          imageMetadata.push({
+            page: pageNum,
+            x: xPos,
+            y: yPos,
+            width: width,
+            height: height
+          })
         }
       }
     }
   }
 
-  // Extrai as imagens
+  // Extrai as imagens do PDF
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'pdfimgs-'))
   const baseOut = path.join(tempDir, 'img')
   await execFileAsync('pdfimages', ['-png', pdfPath, baseOut])
 
-  // Coletar arquivos gerados e associar com páginas
+  // Coletar arquivos e associar com metadados de página
   const files = await fs.promises.readdir(tempDir)
   const imagePaths = files
-    .filter((f) => f.startsWith('img'))
+    .filter((f) => f.startsWith('img') && f.endsWith('.png'))
     .sort()
 
   const images = imagePaths.map((file, idx) => ({
     path: path.join(tempDir, file),
-    page: imagePages[idx] || 1
+    page: imageMetadata[idx]?.page || 1,
+    x: imageMetadata[idx]?.x || 0,
+    y: imageMetadata[idx]?.y || 0,
+    width: imageMetadata[idx]?.width || 0,
+    height: imageMetadata[idx]?.height || 0
   }))
 
+  console.log('📊 Imagens com posições:', images.map(img => `Pág ${img.page}, Y: ${img.y.toFixed(0)}`).join(' | '))
   return { assetsDir: tempDir, images }
 }
 
@@ -195,70 +212,131 @@ function createChaptersWithImagesInOrder(text, images, totalPages, fastMode) {
     return [{ title: 'Conteúdo', data: `<p>${text.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>` }]
   }
 
-  // Estima caracteres por página
-  const charsPerPage = Math.ceil(text.length / totalPages)
-
-  // Cria um mapa de página -> imagens
-  const imagesByPage = new Map()
-  for (const img of images) {
-    if (!imagesByPage.has(img.page)) {
-      imagesByPage.set(img.page, [])
+  // Função para processar uma página dividindo texto baseado nas posições reais das imagens
+  function processPageContent(pageNum, pageText, pageImages) {
+    if (pageImages.length === 0) {
+      // Sem imagens: apenas texto
+      return `<p>${pageText.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>`
     }
-    imagesByPage.get(img.page).push(img)
+
+    // Ordena imagens por posição Y (de cima para baixo)
+    const sortedImages = [...pageImages].sort((a, b) => a.y - b.y)
+
+    if (pageText.trim().length === 0) {
+      // Só imagens, sem texto
+      console.log(`📄 Pág ${pageNum}: ${sortedImages.length} imagens SEM texto`)
+      return sortedImages.map(img =>
+        `<div style="text-align:center;page-break-inside:avoid;margin:10px 0;"><img src="${img.path}" alt="Imagem página ${pageNum}" style="max-width:100%;height:auto;" /></div>`
+      ).join('\n')
+    }
+
+    const PAGE_HEIGHT = 792
+
+    // Calcula quanto % da página cada imagem ocupa
+    const imagePositions = sortedImages.map(img => ({
+      img,
+      positionPercent: img.y / PAGE_HEIGHT
+    }))
+
+    console.log(`📄 Pág ${pageNum}: ${sortedImages.length} imgs [${imagePositions.map(p => `${(p.positionPercent * 100).toFixed(0)}%`).join(', ')}]`)
+
+    // Divide o texto em parágrafos
+    const paragraphs = pageText.split(/\n\n+/).filter(p => p.trim())
+    if (paragraphs.length === 0) {
+      return sortedImages.map(img =>
+        `<div style="text-align:center;page-break-inside:avoid;margin:10px 0;"><img src="${img.path}" alt="Imagem página ${pageNum}" style="max-width:100%;height:auto;" /></div>`
+      ).join('\n')
+    }
+
+    // Cria estrutura unificada: para cada parágrafo, estima sua posição
+    // Para cada imagem, usa sua posição real
+    const elements = []
+
+    // Adiciona imagens com suas posições reais (em %)
+    for (const imgPos of imagePositions) {
+      elements.push({
+        type: 'image',
+        position: imgPos.positionPercent,
+        content: `<div style="text-align:center;page-break-inside:avoid;margin:10px 0;"><img src="${imgPos.img.path}" alt="Imagem página ${pageNum}" style="max-width:100%;height:auto;" /></div>`
+      })
+    }
+
+    // Adiciona parágrafos distribuídos uniformemente
+    for (let i = 0; i < paragraphs.length; i++) {
+      const position = (i + 0.5) / paragraphs.length // Posição relativa (0 a 1)
+      elements.push({
+        type: 'text',
+        position: position,
+        content: `<p>${paragraphs[i].replace(/\n/g, '<br>')}</p>`
+      })
+    }
+
+    // Ordena TUDO por posição
+    elements.sort((a, b) => a.position - b.position)
+
+    // Debug: mostra ordem final
+    const preview = elements.slice(0, 15).map(e =>
+      e.type === 'image' ? `IMG@${(e.position * 100).toFixed(0)}%` : `txt@${(e.position * 100).toFixed(0)}%`
+    ).join(' ')
+    console.log(`  ↳ Ordem: ${preview}${elements.length > 15 ? '...' : ''}`)
+
+    // Retorna elementos na ordem correta
+    return elements.map(el => el.content).join('\n')
   }
 
   if (fastMode) {
-    // Modo rápido: um capítulo único com todas as imagens inseridas na ordem das páginas
+    // Modo rápido: um capítulo único
+    const charsPerPage = Math.ceil(text.length / totalPages)
     let content = ''
     let textPos = 0
 
+    // Agrupa imagens por página
+    const imagesByPage = new Map()
+    for (const img of images) {
+      if (!imagesByPage.has(img.page)) {
+        imagesByPage.set(img.page, [])
+      }
+      imagesByPage.get(img.page).push(img)
+    }
+
     for (let page = 1; page <= totalPages; page++) {
-      // Adiciona texto desta página
       const pageStart = textPos
       const pageEnd = Math.min(textPos + charsPerPage, text.length)
       const pageText = text.substring(pageStart, pageEnd)
+      const pageImages = imagesByPage.get(page) || []
 
-      if (pageText.trim()) {
-        content += `<p>${pageText.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>\n`
-      }
-
-      // Adiciona imagens desta página (se houver)
-      if (imagesByPage.has(page)) {
-        for (const img of imagesByPage.get(page)) {
-          content += `<div style="text-align:center;margin:20px 0;page-break-inside:avoid;"><img src="${img.path}" alt="Imagem página ${page}" style="max-width:100%;height:auto;" /></div>\n`
-        }
-      }
-
+      content += processPageContent(page, pageText, pageImages)
       textPos = pageEnd
     }
 
     return [{ title: 'Conteúdo', data: content }]
   } else {
-    // Modo normal: múltiplos capítulos (agrupa ~10 páginas por capítulo)
+    // Modo normal: múltiplos capítulos
+    const charsPerPage = Math.ceil(text.length / totalPages)
     const pagesPerChapter = 10
     const chapters = []
     let textPos = 0
+
+    // Agrupa imagens por página
+    const imagesByPage = new Map()
+    for (const img of images) {
+      if (!imagesByPage.has(img.page)) {
+        imagesByPage.set(img.page, [])
+      }
+      imagesByPage.get(img.page).push(img)
+    }
 
     for (let chapterStart = 1; chapterStart <= totalPages; chapterStart += pagesPerChapter) {
       const chapterEnd = Math.min(chapterStart + pagesPerChapter - 1, totalPages)
       let chapterContent = ''
 
-      // Processa cada página do capítulo na ordem
       for (let page = chapterStart; page <= chapterEnd; page++) {
         const pageStart = textPos
         const pageEnd = Math.min(textPos + charsPerPage, text.length)
         const pageText = text.substring(pageStart, pageEnd)
+        const pageImages = imagesByPage.get(page) || []
 
-        if (pageText.trim()) {
-          chapterContent += `<p>${pageText.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>\n`
-        }
-
-        if (imagesByPage.has(page)) {
-          for (const img of imagesByPage.get(page)) {
-            chapterContent += `<div style="text-align:center;margin:20px 0;page-break-inside:avoid;"><img src="${img.path}" alt="Imagem página ${page}" style="max-width:100%;height:auto;" /></div>\n`
-          }
-        }
-
+        chapterContent += processPageContent(page, pageText, pageImages)
         textPos = pageEnd
       }
 
@@ -268,7 +346,6 @@ function createChaptersWithImagesInOrder(text, images, totalPages, fastMode) {
       })
     }
 
-    // Caso não tenha sido possível compor capítulos, retorna conteúdo único
     if (chapters.length === 0) {
       return [{ title: 'Conteúdo', data: `<p>${text.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>` }]
     }
