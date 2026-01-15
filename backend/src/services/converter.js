@@ -5,6 +5,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import pdfParse from 'pdf-parse'
 import Epub from 'epub-gen'
+import { translateTextWithProgress, detectLanguage } from './translator.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -24,10 +25,12 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     const fastMode = options.fastMode === true
     let coverPath = options.coverPath || null
     const keepImages = options.keepImages !== false
+    const translateToPt = options.translate === true
     const progress = typeof options.progress === 'function' ? options.progress : null
     console.log('🔄 Iniciando conversão...')
     console.log('⚡ fastMode:', fastMode)
     console.log('🖼️ keepImages:', keepImages)
+    console.log('🌐 translate:', translateToPt)
     console.time('pdf-total')
     progress?.({ type: 'log', message: 'Iniciando conversão' })
 
@@ -52,9 +55,31 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
 
     // Limita tamanho para evitar lentidão extrema em PDFs gigantes
     const MAX_CHARS = 800_000
-    const text = pdfData.text.length > MAX_CHARS
+    let text = pdfData.text.length > MAX_CHARS
       ? pdfData.text.slice(0, MAX_CHARS)
       : pdfData.text
+
+    // Traduzir texto se solicitado
+    if (translateToPt) {
+      console.time('translation')
+      progress?.({ type: 'phase', phase: 'translating' })
+      progress?.({ type: 'log', message: 'Detectando idioma...' })
+
+      const detectedLang = await detectLanguage(text)
+      console.log('🌍 Idioma detectado:', detectedLang)
+      progress?.({ type: 'log', message: `Idioma detectado: ${detectedLang}` })
+
+      if (detectedLang !== 'pt' && detectedLang !== 'unknown') {
+        progress?.({ type: 'log', message: 'Traduzindo para português...' })
+        text = await translateTextWithProgress(text, progress)
+        console.log('✅ Texto traduzido para pt-br')
+        progress?.({ type: 'log', message: 'Tradução concluída!' })
+      } else {
+        console.log('ℹ️ Texto já está em português, pulando tradução')
+        progress?.({ type: 'log', message: 'Texto já está em português' })
+      }
+      console.timeEnd('translation')
+    }
 
     // Extrair título do nome do arquivo ou usar texto
     const title = originalFilename.replace('.pdf', '') || 'Documento Convertido'

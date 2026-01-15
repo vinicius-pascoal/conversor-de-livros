@@ -10,6 +10,7 @@ export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [conversionMode, setConversionMode] = useState<ConversionMode>('fast')
+  const [translateToPt, setTranslateToPt] = useState(false)
   const [isConverting, setIsConverting] = useState(false)
   const [conversionPhase, setConversionPhase] = useState<ConversionPhase>('idle')
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
@@ -118,7 +119,7 @@ export default function Home() {
       console.log('📤 [FRONTEND] Iniciando POST com axios...')
 
       const response = await axios.post(
-        `${apiUrl}/api/convert?mode=${conversionMode}&jobId=${jobId}`,
+        `${apiUrl}/api/convert?mode=${conversionMode}&jobId=${jobId}&translate=${translateToPt}`,
         formData,
         {
           responseType: 'blob',
@@ -292,6 +293,19 @@ export default function Home() {
             📖 Completo
           </button>
         </div>
+      </div>
+
+      <div className="translate-option">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={translateToPt}
+            onChange={(e) => setTranslateToPt(e.target.checked)}
+            disabled={isConverting}
+          />
+          <span>🌐 Traduzir para português (pt-br)</span>
+        </label>
+        <p className="translate-hint">Detecta automaticamente o idioma e traduz o texto</p>
       </div>
 
       <button

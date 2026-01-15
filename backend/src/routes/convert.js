@@ -87,9 +87,12 @@ router.post('/convert', (req, res, next) => {
     const keepImages = req.query.keepImages
       ? ['true', '1', 'yes', 'on'].includes(String(req.query.keepImages).toLowerCase())
       : true
+    const translate = req.query.translate
+      ? ['true', '1', 'yes', 'on'].includes(String(req.query.translate).toLowerCase())
+      : false
 
     console.log('📄 [CONVERT] Arquivo recebido:', pdfFile.originalname, 'tamanho:', pdfFile.size, 'bytes')
-    console.log('📄 [CONVERT] Configuração: fastMode=%s, keepImages=%s', fastMode, keepImages)
+    console.log('📄 [CONVERT] Configuração: fastMode=%s, keepImages=%s, translate=%s', fastMode, keepImages, translate)
     if (jobId) {
       console.log('📡 [CONVERT] Emitindo progresso para jobId:', jobId)
       emitProgress(jobId, { type: 'log', message: `Arquivo recebido: ${pdfFile.originalname}` })
@@ -110,6 +113,7 @@ router.post('/convert', (req, res, next) => {
       fastMode,
       coverPath,
       keepImages,
+      translate,
       progress: jobId ? (evt) => emitProgress(jobId, evt) : null
     })
     console.log('⬅️ Retorno convertPdfToEpub')
