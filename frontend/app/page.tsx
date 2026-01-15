@@ -180,198 +180,217 @@ export default function Home() {
   }
 
   return (
-    <div className="container">
-      <h1>📚 Conversor PDF para EPUB</h1>
+    <div className="page-wrapper">
+      <h1 className="main-title">📚 Conversor PDF para EPUB</h1>
 
-      <div
-        className={`upload-area ${isDragging ? 'dragging' : ''}`}
-        onClick={() => fileInputRef.current?.click()}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-      >
-        <div className="upload-icon">📄</div>
-        <div className="upload-text">
-          {selectedFile ? 'Clique ou arraste para selecionar outro arquivo' : 'Clique ou arraste seu arquivo PDF aqui'}
-        </div>
-        <div className="upload-subtext">Formatos aceitos: PDF</div>
-      </div>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pdf"
-        onChange={handleFileChange}
-        className="file-input"
-      />
-
-      {selectedFile && (
-        <div className="selected-file">
-          <div className="file-info">
-            <div className="file-icon">📄</div>
-            <div className="file-details">
-              <h3>{selectedFile.name}</h3>
-              <p>{formatFileSize(selectedFile.size)}</p>
+      {/* Card Progresso (aparece no topo quando ativo) */}
+      {isConverting && (
+        <div className="card progress-card">
+          <h2 className="card-title">📊 Progresso</h2>
+          <div className="conversion-progress">
+            <div className="progress-phases">
+              <div className={`phase ${conversionPhase === 'uploading' || (conversionPhase && conversionPhase !== 'idle') ? 'active' : ''}`}>
+                <div className="phase-icon">📤</div>
+                <div className="phase-label">Enviando</div>
+              </div>
+              <div className={`phase ${conversionPhase === 'extracting' || ['processing', 'generating', 'complete'].includes(conversionPhase) ? 'active' : ''}`}>
+                <div className="phase-icon">🖼️</div>
+                <div className="phase-label">Imagens</div>
+              </div>
+              <div className={`phase ${conversionPhase === 'processing' || ['generating', 'complete'].includes(conversionPhase) ? 'active' : ''}`}>
+                <div className="phase-icon">⚙️</div>
+                <div className="phase-label">Processando</div>
+              </div>
+              <div className={`phase ${conversionPhase === 'generating' || conversionPhase === 'complete' ? 'active' : ''}`}>
+                <div className="phase-icon">📦</div>
+                <div className="phase-label">Gerando</div>
+              </div>
             </div>
+
+            <div className="progress-bar-container">
+              <div
+                className="progress-bar"
+                style={{
+                  width: conversionPhase === 'uploading'
+                    ? `${Math.min(25, Math.max(0, uploadPercent / 4))}%`
+                    : conversionPhase === 'extracting' ? '50%'
+                      : conversionPhase === 'processing' ? '75%'
+                        : conversionPhase === 'generating' ? '90%'
+                          : '100%'
+                }}
+              />
+            </div>
+
+            <div className="progress-info">
+              <div className="progress-icon">
+                {conversionPhase === 'complete' ? '✅' : '⏳'}
+              </div>
+              <div className="progress-text">
+                {phaseLabels[conversionPhase]}
+              </div>
+            </div>
+
+            {progressLog.length > 0 && (
+              <div className="progress-logs">
+                {progressLog.slice(-5).map((l, idx) => (
+                  <div key={idx} className="progress-log-item">{l}</div>
+                ))}
+              </div>
+            )}
           </div>
-          <button
-            className="remove-btn"
-            onClick={(e) => {
-              e.stopPropagation()
-              setSelectedFile(null)
-              setMessage(null)
-            }}
-          >
-            Remover
-          </button>
         </div>
       )}
 
-      <div className="cover-section">
-        <div className="cover-header">
-          <h3>Capa (opcional)</h3>
-          <button
-            type="button"
-            className="secondary-btn"
-            onClick={() => coverInputRef.current?.click()}
-          >
-            Escolher capa
-          </button>
-        </div>
-        <p className="cover-hint">Formatos: JPG ou PNG. Será usada como capa do EPUB.</p>
-        <input
-          ref={coverInputRef}
-          type="file"
-          accept="image/png,image/jpeg"
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file && file.type.startsWith('image/')) {
-              setCoverFile(file)
-              setMessage(null)
-            } else if (file) {
-              setMessage({ type: 'error', text: 'Capa precisa ser imagem (JPG ou PNG).' })
-            }
-          }}
-          className="file-input"
-        />
-        {coverFile && (
-          <div className="selected-cover">
-            <div className="file-info">
-              <div className="file-icon">🖼️</div>
-              <div className="file-details">
-                <h3>{coverFile.name}</h3>
-                <p>{formatFileSize(coverFile.size)}</p>
-              </div>
-            </div>
+      <div className="grid-layout">
+        {/* Card 1: Capa */}
+        <div className="card cover-card">
+          <h2 className="card-title">🖼️ Capa</h2>
+          <div className="cover-section">
+            <p className="cover-hint">JPG ou PNG (opcional)</p>
             <button
-              className="remove-btn"
-              onClick={() => setCoverFile(null)}
+              type="button"
+              className="secondary-btn full-width"
+              onClick={() => coverInputRef.current?.click()}
             >
-              Remover
+              {coverFile ? 'Alterar capa' : 'Escolher capa'}
             </button>
-          </div>
-        )}
-      </div>
-
-      <div className="mode-selector">
-        <label htmlFor="mode-select">Modo de conversão:</label>
-        <div className="mode-options">
-          <button
-            className={`mode-btn ${conversionMode === 'fast' ? 'active' : ''}`}
-            onClick={() => setConversionMode('fast')}
-            disabled={isConverting}
-            title="Conversão mais rápida em um capítulo único"
-          >
-            ⚡ Rápido
-          </button>
-          <button
-            className={`mode-btn ${conversionMode === 'full' ? 'active' : ''}`}
-            onClick={() => setConversionMode('full')}
-            disabled={isConverting}
-            title="Conversão completa com múltiplos capítulos"
-          >
-            📖 Completo
-          </button>
-        </div>
-      </div>
-
-      <div className="translate-option">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={translateToPt}
-            onChange={(e) => setTranslateToPt(e.target.checked)}
-            disabled={isConverting}
-          />
-          <span>🌐 Traduzir para português (pt-br)</span>
-        </label>
-        <p className="translate-hint">Detecta automaticamente o idioma e traduz o texto</p>
-      </div>
-
-      <button
-        className="convert-btn"
-        onClick={handleConvert}
-        disabled={!selectedFile || isConverting}
-      >
-        {isConverting ? 'Convertendo...' : 'Converter para EPUB'}
-      </button>
-
-      {isConverting && (
-        <div className="conversion-progress">
-          <div className="progress-phases">
-            <div className={`phase ${conversionPhase === 'uploading' || (conversionPhase && conversionPhase !== 'idle') ? 'active' : ''}`}>
-              <div className="phase-icon">📤</div>
-              <div className="phase-label">Enviando</div>
-            </div>
-            <div className={`phase ${conversionPhase === 'extracting' || ['processing', 'generating', 'complete'].includes(conversionPhase) ? 'active' : ''}`}>
-              <div className="phase-icon">🖼️</div>
-              <div className="phase-label">Imagens</div>
-            </div>
-            <div className={`phase ${conversionPhase === 'processing' || ['generating', 'complete'].includes(conversionPhase) ? 'active' : ''}`}>
-              <div className="phase-icon">⚙️</div>
-              <div className="phase-label">Processando</div>
-            </div>
-            <div className={`phase ${conversionPhase === 'generating' || conversionPhase === 'complete' ? 'active' : ''}`}>
-              <div className="phase-icon">📦</div>
-              <div className="phase-label">Gerando</div>
-            </div>
-          </div>
-
-          <div className="progress-bar-container">
-            <div
-              className="progress-bar"
-              style={{
-                width: conversionPhase === 'uploading'
-                  ? `${Math.min(25, Math.max(0, uploadPercent / 4))}%`
-                  : conversionPhase === 'extracting' ? '50%'
-                    : conversionPhase === 'processing' ? '75%'
-                      : conversionPhase === 'generating' ? '90%'
-                        : '100%'
+            <input
+              ref={coverInputRef}
+              type="file"
+              accept="image/png,image/jpeg"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file && file.type.startsWith('image/')) {
+                  setCoverFile(file)
+                  setMessage(null)
+                } else if (file) {
+                  setMessage({ type: 'error', text: 'Capa precisa ser imagem (JPG ou PNG).' })
+                }
               }}
+              className="file-input"
             />
+            {coverFile && (
+              <div className="selected-cover">
+                <div className="file-info">
+                  <div className="file-icon">🖼️</div>
+                  <div className="file-details">
+                    <h3>{coverFile.name}</h3>
+                    <p>{formatFileSize(coverFile.size)}</p>
+                  </div>
+                </div>
+                <button
+                  className="remove-btn"
+                  onClick={() => setCoverFile(null)}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Card 2: Arquivo PDF */}
+        <div className="card upload-card">
+          <h2 className="card-title">📄 Arquivo PDF</h2>
+          <div
+            className={`upload-area ${isDragging ? 'dragging' : ''}`}
+            onClick={() => fileInputRef.current?.click()}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+          >
+            <div className="upload-icon">📄</div>
+            <div className="upload-text">
+              {selectedFile ? 'Clique para alterar' : 'Clique ou arraste aqui'}
+            </div>
+            <div className="upload-subtext">Apenas PDF</div>
           </div>
 
-          <div className="progress-info">
-            <div className="progress-icon">
-              {conversionPhase === 'complete' ? '✅' : '⏳'}
-            </div>
-            <div className="progress-text">
-              {phaseLabels[conversionPhase]}
-            </div>
-          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf"
+            onChange={handleFileChange}
+            className="file-input"
+          />
 
-          {progressLog.length > 0 && (
-            <div className="progress-logs">
-              {progressLog.slice(-5).map((l, idx) => (
-                <div key={idx} className="progress-log-item">{l}</div>
-              ))}
+          {selectedFile && (
+            <div className="selected-file">
+              <div className="file-info">
+                <div className="file-icon">📄</div>
+                <div className="file-details">
+                  <h3>{selectedFile.name}</h3>
+                  <p>{formatFileSize(selectedFile.size)}</p>
+                </div>
+              </div>
+              <button
+                className="remove-btn"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSelectedFile(null)
+                  setMessage(null)
+                }}
+              >
+                ✕
+              </button>
             </div>
           )}
         </div>
-      )}
+
+        {/* Card 3: Configurações */}
+        <div className="card settings-card">
+          <h2 className="card-title">⚙️ Configurações</h2>
+
+          <div className="mode-selector">
+            <label>Modo de conversão:</label>
+            <div className="mode-options">
+              <button
+                className={`mode-btn ${conversionMode === 'fast' ? 'active' : ''}`}
+                onClick={() => setConversionMode('fast')}
+                disabled={isConverting}
+                title="Conversão mais rápida em um capítulo único"
+              >
+                ⚡ Rápido
+              </button>
+              <button
+                className={`mode-btn ${conversionMode === 'full' ? 'active' : ''}`}
+                onClick={() => setConversionMode('full')}
+                disabled={isConverting}
+                title="Conversão completa com múltiplos capítulos"
+              >
+                📖 Completo
+              </button>
+            </div>
+          </div>
+
+          <div className="translate-option">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={translateToPt}
+                onChange={(e) => setTranslateToPt(e.target.checked)}
+                disabled={isConverting}
+              />
+              <span>🌐 Traduzir para pt-br</span>
+            </label>
+            <p className="translate-hint">Detecta e traduz automaticamente</p>
+          </div>
+        </div>
+
+        {/* Card 4: Ação */}
+        <div className="card action-card">
+          <button
+            className="convert-btn"
+            onClick={handleConvert}
+            disabled={!selectedFile || isConverting}
+          >
+            {isConverting ? 'Convertendo...' : 'Converter para EPUB'}
+          </button>
+        </div>
+      </div>
 
       {message && (
-        <div className={message.type === 'success' ? 'success-message' : 'error-message'}>
+        <div className={`card message-card ${message.type === 'success' ? 'success-message' : 'error-message'}`}>
           {message.text}
         </div>
       )}
