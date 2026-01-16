@@ -44,6 +44,74 @@ const upload = multer({
 })
 
 // Rota de conversão
+/**
+ * @swagger
+ * /api/convert:
+ *   post:
+ *     tags:
+ *       - Conversão
+ *     summary: Converte um arquivo PDF para EPUB
+ *     description: Converte um arquivo PDF para o formato EPUB com opções de tradução, modo rápido e cover opcional
+ *     parameters:
+ *       - name: mode
+ *         in: query
+ *         description: Modo de conversão - 'fast' para conversão rápida ou 'full' para completa
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [fast, full]
+ *           default: fast
+ *       - name: translate
+ *         in: query
+ *         description: Traduzir o conteúdo para português (pt-br)
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *       - name: jobId
+ *         in: query
+ *         description: ID único da tarefa para rastreamento de progresso (SSE)
+ *         required: false
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               pdf:
+ *                 type: string
+ *                 format: binary
+ *                 description: Arquivo PDF a ser convertido (obrigatório)
+ *               cover:
+ *                 type: string
+ *                 format: binary
+ *                 description: Imagem de capa do EPUB em PNG ou JPG (opcional)
+ *             required:
+ *               - pdf
+ *     responses:
+ *       200:
+ *         description: EPUB gerado com sucesso
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       400:
+ *         description: Erro na requisição (arquivo inválido ou ausente)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Erro ao processar a conversão
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 router.post('/convert', (req, res, next) => {
   console.log('🔵 [CONVERT] Requisição recebida')
   console.log('🔵 [CONVERT] Headers:', JSON.stringify(req.headers, null, 2))

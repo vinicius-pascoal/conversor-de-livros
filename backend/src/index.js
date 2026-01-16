@@ -1,8 +1,11 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import swaggerUi from 'swagger-ui-express'
+import swaggerSpecs from './swagger.js'
 import convertRoutes from './routes/convert.js'
 import progressRoutes from './routes/progress.js'
+import healthRoutes from './routes/health.js'
 
 dotenv.config()
 
@@ -13,6 +16,23 @@ const PORT = process.env.PORT || 3001
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true
+}))
+
+// JSON endpoint para Swagger (ANTES de setup para evitar conflitos)
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json')
+  res.send(swaggerSpecs)
+})
+
+// Swagger UI
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, {
+  swaggerOptions: {
+    displayOperationId: true,
+    defaultModelsExpandDepth: 1,
+    docExpansion: 'list'
+  },
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'PDF to EPUB Converter API'
 }))
 
 // Não aplicar body parsers em rotas de upload (multer gerencia isso)
@@ -31,11 +51,7 @@ app.use(express.urlencoded({ extended: true }))
 // Routes
 app.use('/api', convertRoutes)
 app.use('/api', progressRoutes)
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Servidor rodando!' })
-})
+app.use('/', healthRoutes)
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -49,6 +65,7 @@ app.use((err, req, res, next) => {
 const server = app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`)
   console.log(`📡 Frontend permitido: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`)
+  console.log(`📚 Swagger disponível em: http://localhost:${PORT}/api-docs`)
 })
 
 // Desabilita timeouts de requisição para permitir conversões longas
