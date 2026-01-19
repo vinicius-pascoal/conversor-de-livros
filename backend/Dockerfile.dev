@@ -1,11 +1,17 @@
 FROM node:18-slim
 
-# Instala Poppler (pdfimages) e dependências mínimas para imagens
+# Instala Poppler, Canvas e dependências nativas para renderização de imagens
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
   poppler-utils \
   libjpeg62-turbo-dev \
   libpng-dev \
+  build-essential \
+  libcairo2-dev \
+  libpango1.0-dev \
+  libjpeg-dev \
+  libgif-dev \
+  librsvg2-dev \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

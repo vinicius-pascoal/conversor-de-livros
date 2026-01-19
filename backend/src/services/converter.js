@@ -6,6 +6,8 @@ import { promisify } from 'util'
 import pdfParse from 'pdf-parse'
 import Epub from 'epub-gen'
 import { translateTextWithProgress, detectLanguage } from './translator.js'
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { createCanvas } from 'canvas'
 
 const execFileAsync = promisify(execFile)
 
@@ -177,59 +179,173 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
 }
 
 async function extractImagesWithPages(pdfPath) {
-  // Lista imagens com informações DETALHADAS: página, X, Y, largura, altura
-  const { stdout: listOutput } = await execFileAsync('pdfimages', ['-list', pdfPath])
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'pdfimgs-'))
+  const images = []
 
-  // Parse da saída para obter: página, posição X, Y, largura, altura
-  const lines = listOutput.split('\n').slice(2) // Pula cabeçalho
-  const imageMetadata = []
+  try {
+    // Lê o PDF
+    const dataBuffer = await fs.promises.readFile(pdfPath)
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(dataBuffer),
+      useSystemFonts: true,
+      verbosity: 0 // Reduz logs do pdfjs
+    })
+    const pdfDocument = await loadingTask.promise
 
-  for (const line of lines) {
-    if (line.trim()) {
-      const parts = line.trim().split(/\s+/)
-      // Formato: num page x-pos y-pos width height ...
-      if (parts.length >= 6) {
-        const pageNum = parseInt(parts[1])
-        const xPos = parseFloat(parts[2])
-        const yPos = parseFloat(parts[3])
-        const width = parseFloat(parts[4])
-        const height = parseFloat(parts[5])
+    console.log(`📖 PDF carregado: ${pdfDocument.numPages} páginas`)
 
-        if (!isNaN(pageNum) && !isNaN(yPos)) {
-          imageMetadata.push({
-            page: pageNum,
-            x: xPos,
-            y: yPos,
-            width: width,
-            height: height
-          })
+    // Itera por todas as páginas
+    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum)
+      const viewport = page.getViewport({ scale: 1.0 })
+
+      // Obtém operadores da página para encontrar imagens e suas posições
+      const ops = await page.getOperatorList()
+
+      // Rastreia transformações para calcular posições reais
+      const transformStack = [[1, 0, 0, 1, 0, 0]] // Matriz identidade inicial
+      let imageIndex = 0
+
+      for (let i = 0; i < ops.fnArray.length; i++) {
+        const fn = ops.fnArray[i]
+        const args = ops.argsArray[i]
+
+        // Rastreia transformações de coordenadas
+        if (fn === pdfjsLib.OPS.save) {
+          transformStack.push([...transformStack[transformStack.length - 1]])
+        } else if (fn === pdfjsLib.OPS.restore) {
+          if (transformStack.length > 1) transformStack.pop()
+        } else if (fn === pdfjsLib.OPS.transform) {
+          const current = transformStack[transformStack.length - 1]
+          const [a, b, c, d, e, f] = args
+          // Multiplica matrizes
+          transformStack[transformStack.length - 1] = [
+            a * current[0] + b * current[2],
+            a * current[1] + b * current[3],
+            c * current[0] + d * current[2],
+            c * current[1] + d * current[3],
+            e * current[0] + f * current[2] + current[4],
+            e * current[1] + f * current[3] + current[5]
+          ]
+        }
+
+        // Detecta operações de imagem
+        if (fn === pdfjsLib.OPS.paintImageXObject ||
+          fn === pdfjsLib.OPS.paintInlineImageXObject ||
+          fn === pdfjsLib.OPS.paintImageMaskXObject) {
+
+          const imageName = args[0]
+
+          try {
+            // Obtém a imagem
+            const image = await page.objs.get(imageName)
+
+            if (!image || !image.width || !image.height) {
+              continue
+            }
+
+            // Filtra imagens muito pequenas (provavelmente ícones ou artefatos)
+            if (image.width < 32 || image.height < 32) {
+              console.log(`⏭️ Ignorando imagem pequena ${imageName}: ${image.width}x${image.height}`)
+              continue
+            }
+
+            // Calcula posição real usando a transformação atual
+            const currentTransform = transformStack[transformStack.length - 1]
+            const xPos = currentTransform[4]
+            const yPos = viewport.height - currentTransform[5] // Inverte Y (PDF usa coordenadas de baixo para cima)
+
+            // Escala para melhor qualidade (2x)
+            const scale = 2.0
+            const scaledWidth = Math.round(image.width * scale)
+            const scaledHeight = Math.round(image.height * scale)
+
+            // Cria canvas para renderizar a imagem em alta qualidade
+            const canvas = createCanvas(scaledWidth, scaledHeight)
+            const ctx = canvas.getContext('2d', {
+              alpha: true,
+              pixelFormat: 'RGBA32'
+            })
+
+            // Cria ImageData a partir dos dados da imagem
+            if (image.data) {
+              const tempCanvas = createCanvas(image.width, image.height)
+              const tempCtx = tempCanvas.getContext('2d')
+              const imageData = tempCtx.createImageData(image.width, image.height)
+
+              // Copia os dados da imagem com base no tipo
+              if (image.kind === 1) { // GRAYSCALE_1BPP
+                for (let j = 0; j < image.data.length; j++) {
+                  const idx = j * 4
+                  imageData.data[idx] = image.data[j]     // R
+                  imageData.data[idx + 1] = image.data[j] // G
+                  imageData.data[idx + 2] = image.data[j] // B
+                  imageData.data[idx + 3] = 255           // A
+                }
+              } else if (image.kind === 2) { // RGB_24BPP
+                for (let j = 0, k = 0; j < image.data.length; j += 3, k += 4) {
+                  imageData.data[k] = image.data[j]       // R
+                  imageData.data[k + 1] = image.data[j + 1] // G
+                  imageData.data[k + 2] = image.data[j + 2] // B
+                  imageData.data[k + 3] = 255             // A
+                }
+              } else if (image.kind === 3) { // RGBA_32BPP
+                imageData.data.set(image.data)
+              } else { // Fallback genérico
+                const bytesPerPixel = image.data.length / (image.width * image.height)
+                for (let j = 0, k = 0; j < image.data.length; j += bytesPerPixel, k += 4) {
+                  imageData.data[k] = image.data[j]         // R
+                  imageData.data[k + 1] = image.data[j + 1] || 0 // G
+                  imageData.data[k + 2] = image.data[j + 2] || 0 // B
+                  imageData.data[k + 3] = bytesPerPixel === 4 ? image.data[j + 3] : 255 // A
+                }
+              }
+
+              tempCtx.putImageData(imageData, 0, 0)
+
+              // Redimensiona com qualidade (usando interpolação bicúbica do canvas)
+              ctx.imageSmoothingEnabled = true
+              ctx.imageSmoothingQuality = 'high'
+              ctx.drawImage(tempCanvas, 0, 0, scaledWidth, scaledHeight)
+            }
+
+            // Salva a imagem como PNG de alta qualidade
+            const imagePath = path.join(tempDir, `img-p${String(pageNum).padStart(4, '0')}-${String(imageIndex).padStart(3, '0')}.png`)
+            const buffer = canvas.toBuffer('image/png', {
+              compressionLevel: 6,  // Balanceio entre qualidade e tamanho
+              filters: canvas.PNG_FILTER_NONE
+            })
+            await fs.promises.writeFile(imagePath, buffer)
+
+            images.push({
+              path: imagePath,
+              page: pageNum,
+              x: xPos,
+              y: yPos,
+              width: scaledWidth,
+              height: scaledHeight,
+              originalWidth: image.width,
+              originalHeight: image.height
+            })
+
+            console.log(`✅ Pág ${pageNum} - Imagem ${imageIndex}: ${image.width}x${image.height} → ${scaledWidth}x${scaledHeight} @ Y:${yPos.toFixed(0)}`)
+            imageIndex++
+          } catch (imgError) {
+            console.warn(`⚠️ Erro ao extrair imagem ${imageName} da página ${pageNum}:`, imgError.message)
+          }
         }
       }
     }
+
+    console.log(`📊 Total de imagens extraídas com PDF.js: ${images.length}`)
+    if (images.length > 0) {
+      console.log('📍 Posições:', images.map(img => `Pág ${img.page} Y:${img.y.toFixed(0)}`).join(' | '))
+    }
+    return { assetsDir: tempDir, images }
+  } catch (error) {
+    console.error('❌ Erro ao extrair imagens com PDF.js:', error)
+    throw error
   }
-
-  // Extrai as imagens do PDF
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'pdfimgs-'))
-  const baseOut = path.join(tempDir, 'img')
-  await execFileAsync('pdfimages', ['-png', pdfPath, baseOut])
-
-  // Coletar arquivos e associar com metadados de página
-  const files = await fs.promises.readdir(tempDir)
-  const imagePaths = files
-    .filter((f) => f.startsWith('img') && f.endsWith('.png'))
-    .sort()
-
-  const images = imagePaths.map((file, idx) => ({
-    path: path.join(tempDir, file),
-    page: imageMetadata[idx]?.page || 1,
-    x: imageMetadata[idx]?.x || 0,
-    y: imageMetadata[idx]?.y || 0,
-    width: imageMetadata[idx]?.width || 0,
-    height: imageMetadata[idx]?.height || 0
-  }))
-
-  console.log('📊 Imagens com posições:', images.map(img => `Pág ${img.page}, Y: ${img.y.toFixed(0)}`).join(' | '))
-  return { assetsDir: tempDir, images }
 }
 
 function createChaptersWithImagesInOrder(text, images, totalPages, fastMode) {
