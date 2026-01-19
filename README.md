@@ -1,6 +1,6 @@
 # Conversor de PDF para EPUB
 
-Aplicação completa para converter arquivos PDF em formato EPUB, preservando imagens e estrutura do documento original. Frontend em Next.js e backend em Node.js com Poppler para extração de imagens.
+Aplicação completa para converter arquivos PDF em formato EPUB, preservando imagens e estrutura do documento original. Frontend em Next.js e backend em Node.js com **PDF.js** para extração de imagens e texto.
 
 ## 📁 Estrutura do Projeto
 
@@ -10,7 +10,7 @@ conversor-de-livros/
 │   ├── app/
 │   ├── Dockerfile
 │   └── package.json
-├── backend/               # Servidor Node.js + Poppler
+├── backend/               # Servidor Node.js + PDF.js
 │   ├── src/
 │   ├── Dockerfile
 │   └── package.json
@@ -58,11 +58,6 @@ docker build -f frontend/Dockerfile -t conversor-frontend:prod ./frontend
 ```
 
 ### Sem Docker (Desenvolvimento Local)
-
-⚠️ **Atenção**: Para rodar localmente sem Docker, você precisa instalar o Poppler no seu sistema:
-- **Windows**: Baixar de https://github.com/oschwartz10612/poppler-windows/releases/ e adicionar ao PATH
-- **Linux**: `sudo apt-get install poppler-utils`
-- **macOS**: `brew install poppler`
 
 #### Backend
 
@@ -115,8 +110,9 @@ A aplicação estará disponível em `http://localhost:3000`
 - **Express** - Framework web
 - **Multer** - Upload de arquivos (PDF + imagem de capa)
 - **pdf-parse** - Extração de texto de PDF
+- **pdfjs-dist** - Extração de imagens do PDF
+- **pngjs** - Conversão de imagens para PNG
 - **epub-gen** - Geração de arquivos EPUB
-- **Poppler (pdfimages)** - Extração de imagens do PDF
 - **CORS** - Comunicação entre frontend e backend
 
 ### DevOps
@@ -191,7 +187,7 @@ Se nenhuma capa for enviada e `keepImages=true`, a primeira imagem extraída do 
 - `src/routes/convert.js` - Rotas de conversão e upload
 - `src/services/converter.js` - Lógica de conversão PDF → EPUB
   - Extração de texto com `pdf-parse`
-  - Extração de imagens com `pdfimages` (Poppler)
+  - Extração de imagens com `pdfjs-dist` (PDF.js)
   - Posicionamento de imagens nas localizações originais
   - Upload de PDF via drag & drop
   - Seleção opcional de capa
@@ -207,20 +203,21 @@ Se nenhuma capa for enviada e `keepImages=true`, a primeira imagem extraída do 
 
 1. **Upload**: Usuário envia PDF e opcionalmente uma imagem de capa
 2. **Extração de Texto**: `pdf-parse` extrai todo o texto do PDF
-3. **Extração de Imagens**: `pdfimages -list` identifica páginas das imagens, depois `-png` extrai
+3. **Extração de Imagens**: `pdfjs-dist` processa cada página do PDF extraindo imagens com suas posições exatas (coordenadas X, Y)
 4. **Divisão em Capítulos**: Texto dividido em capítulos (modo normal) ou capítulo único (modo rápido)
-5. **Posicionamento de Imagens**: Cada imagem é inserida na posição proporcional baseada na página original
+5. **Posicionamento de Imagens**: Cada imagem é inserida na posição proporcional baseada nas coordenadas originais da página
 6. **Geração EPUB**: `epub-gen` cria o arquivo EPUB com texto, imagens e capa
 7. **Download**: Frontend recebe o EPUB e inicia download automático
 8. **Limpeza**: Arquivos temporários são removidos do servidor
 
 ### Posicionamento de Imagens
 
-O sistema usa o número da página reportado por `pdfimages -list` para calcular onde inserir cada imagem:
+O sistema usa as coordenadas reais (X, Y) extraídas do PDF pelo PDF.js para posicionar cada imagem:
 
-- Se o PDF tem 100 páginas divididas em 5 capítulos (20 páginas cada)
-- Uma imagem na página 23 vai para o Capítulo 2 (páginas 21-40)
-- É inserida a ~15% do conteúdo do capítulo (página 23 é a 3ª de 20)
+- Cada página do PDF é processada para obter as operações de desenho
+- Quando uma imagem é detectada, suas coordenadas de transformação são capturadas
+- A posição Y é calculada como percentual da altura da página
+- Imagens são ordenadas e inseridas mantendo sua posição relativa ao texto
 
 Isso garante que as imagens apareçam aproximadamente nas mesmas posições do PDF original.
 
@@ -228,7 +225,7 @@ Isso garante que as imagens apareçam aproximadamente nas mesmas posições do P
 
 ### Arquitetura
 
-- **Backend Container**: Node.js 18 Slim + Poppler
+- **Backend Container**: Node.js 18 Slim com PDF.js
 - **Frontend Container**: Node.js 18 Slim + Next.js
 - **Network**: Bridge automático entre containers
 - **Volumes**: 
@@ -306,12 +303,6 @@ taskkill /PID <PID> /F
 
 # ou mudar as portas no docker-compose.yml
 ```
-
-### Poppler não encontrado (backend)
-
-Se receber erro sobre `pdfimages`, certifique-se que:
-- Está usando Docker (Poppler é instalado na imagem)
-- Se rodar localmente, instale Poppler no seu sistema
 
 ### Frontend não conecta ao Backend
 

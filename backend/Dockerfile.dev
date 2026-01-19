@@ -1,13 +1,6 @@
 FROM node:18-slim
 
-# Instala Poppler (pdfimages) e dependências mínimas para imagens
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-  poppler-utils \
-  libjpeg62-turbo-dev \
-  libpng-dev \
-  && rm -rf /var/lib/apt/lists/*
-
+# Não precisa mais instalar Poppler - usando PDF.js puro JavaScript
 WORKDIR /app
 
 COPY package*.json ./
