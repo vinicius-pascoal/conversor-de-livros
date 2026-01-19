@@ -89,6 +89,7 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     // Extrair imagens do PDF (opcional) com informação de página
     let assetsDir = null
     let extractedImages = []
+    let textPositionsByPage = new Map()
     if (keepImages) {
       console.time('pdf-images')
       progress?.({ type: 'phase', phase: 'extracting' })
@@ -103,6 +104,14 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
           console.log('📔 Capa definida pela primeira imagem extraída')
           progress?.({ type: 'log', message: 'Capa definida pela primeira imagem' })
         }
+        // Extração adicional: posições de texto por página para validação de ordem
+        try {
+          const textPosResult = await extractTextPositionsWithPages(pdfPath)
+          textPositionsByPage = textPosResult.textPositionsByPage
+          console.log('📝 Posições de texto extraídas para', textPositionsByPage.size, 'páginas')
+        } catch (txErr) {
+          console.warn('⚠️ Falha ao extrair posições de texto:', txErr.message)
+        }
       } catch (err) {
         console.error('⚠️ Falha ao extrair imagens:', err.message)
         progress?.({ type: 'log', message: `Falha ao extrair imagens: ${err.message}` })
@@ -116,12 +125,12 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     if (fastMode) {
       // Modo rápido: um capítulo único com imagens inseridas em ordem
       progress?.({ type: 'phase', phase: 'processing' })
-      chapters = createChaptersWithImagesInOrder(text, extractedImages, pdfData.numpages, true)
+      chapters = createChaptersWithImagesInOrder(text, extractedImages, pdfData.numpages, true, textPositionsByPage)
       console.timeEnd('split-chapters')
     } else {
       progress?.({ type: 'phase', phase: 'processing' })
       chapters = await runWithTimeout(
-        Promise.resolve().then(() => createChaptersWithImagesInOrder(text, extractedImages, pdfData.numpages, false)),
+        Promise.resolve().then(() => createChaptersWithImagesInOrder(text, extractedImages, pdfData.numpages, false, textPositionsByPage)),
         5000,
         'split-chapters'
       )
@@ -349,6 +358,11 @@ async function extractImagesWithPages(pdfPath) {
 }
 
 function createChaptersWithImagesInOrder(text, images, totalPages, fastMode) {
+  // Mantida para compatibilidade; versão estendida abaixo aceita textPositions
+  return createChaptersWithImagesInOrderExtended(text, images, totalPages, fastMode, new Map())
+}
+
+function createChaptersWithImagesInOrderExtended(text, images, totalPages, fastMode, textPositionsByPage) {
   if (!text || totalPages === 0) {
     return [{ title: 'Conteúdo', data: `<p>${text.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>` }]
   }
@@ -362,67 +376,21 @@ function createChaptersWithImagesInOrder(text, images, totalPages, fastMode) {
 
     // Ordena imagens por posição Y (de cima para baixo)
     const sortedImages = [...pageImages].sort((a, b) => a.y - b.y)
+    const textPositions = textPositionsByPage.get(pageNum) || []
+    const hasText = textPositions.length > 0 || pageText.trim().length > 0
+    const highestImageY = sortedImages.length ? sortedImages[0].y : null
+    const lowestImageY = sortedImages.length ? sortedImages[sortedImages.length - 1].y : null
+    const hasTextBeforeImage = hasText && textPositions.some(y => y < (highestImageY ?? Number.MAX_SAFE_INTEGER))
+    const hasTextAfterImage = hasText && textPositions.some(y => y > (lowestImageY ?? -1))
 
-    if (pageText.trim().length === 0) {
-      // Só imagens, sem texto
-      console.log(`📄 Pág ${pageNum}: ${sortedImages.length} imagens SEM texto`)
-      return sortedImages.map(img =>
-        `<div style="text-align:center;page-break-inside:avoid;margin:10px 0;"><img src="${img.path}" alt="Imagem página ${pageNum}" style="max-width:100%;height:auto;" /></div>`
-      ).join('\n')
-    }
+    // Registra diagnóstico para posicionamento
+    console.log(`📄 Pág ${pageNum}: imagens=${sortedImages.length}, textoAntes=${hasTextBeforeImage}, textoDepois=${hasTextAfterImage}`)
 
-    const PAGE_HEIGHT = 792
+    // Regra solicitada: páginas com imagens devem exibir APENAS as imagens
+    return sortedImages.map(img =>
+      `<div style="text-align:center;page-break-inside:avoid;margin:12px 0;"><img src="${img.path}" alt="Imagem página ${pageNum}" style="max-width:100%;height:auto;" /></div>`
+    ).join('\n')
 
-    // Calcula quanto % da página cada imagem ocupa
-    const imagePositions = sortedImages.map(img => ({
-      img,
-      positionPercent: img.y / PAGE_HEIGHT
-    }))
-
-    console.log(`📄 Pág ${pageNum}: ${sortedImages.length} imgs [${imagePositions.map(p => `${(p.positionPercent * 100).toFixed(0)}%`).join(', ')}]`)
-
-    // Divide o texto em parágrafos
-    const paragraphs = pageText.split(/\n\n+/).filter(p => p.trim())
-    if (paragraphs.length === 0) {
-      return sortedImages.map(img =>
-        `<div style="text-align:center;page-break-inside:avoid;margin:10px 0;"><img src="${img.path}" alt="Imagem página ${pageNum}" style="max-width:100%;height:auto;" /></div>`
-      ).join('\n')
-    }
-
-    // Cria estrutura unificada: para cada parágrafo, estima sua posição
-    // Para cada imagem, usa sua posição real
-    const elements = []
-
-    // Adiciona imagens com suas posições reais (em %)
-    for (const imgPos of imagePositions) {
-      elements.push({
-        type: 'image',
-        position: imgPos.positionPercent,
-        content: `<div style="text-align:center;page-break-inside:avoid;margin:10px 0;"><img src="${imgPos.img.path}" alt="Imagem página ${pageNum}" style="max-width:100%;height:auto;" /></div>`
-      })
-    }
-
-    // Adiciona parágrafos distribuídos uniformemente
-    for (let i = 0; i < paragraphs.length; i++) {
-      const position = (i + 0.5) / paragraphs.length // Posição relativa (0 a 1)
-      elements.push({
-        type: 'text',
-        position: position,
-        content: `<p>${paragraphs[i].replace(/\n/g, '<br>')}</p>`
-      })
-    }
-
-    // Ordena TUDO por posição
-    elements.sort((a, b) => a.position - b.position)
-
-    // Debug: mostra ordem final
-    const preview = elements.slice(0, 15).map(e =>
-      e.type === 'image' ? `IMG@${(e.position * 100).toFixed(0)}%` : `txt@${(e.position * 100).toFixed(0)}%`
-    ).join(' ')
-    console.log(`  ↳ Ordem: ${preview}${elements.length > 15 ? '...' : ''}`)
-
-    // Retorna elementos na ordem correta
-    return elements.map(el => el.content).join('\n')
   }
 
   if (fastMode) {
@@ -502,4 +470,44 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/\"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+// Extrai posições Y do texto por página para validar se há texto antes/depois das imagens
+async function extractTextPositionsWithPages(pdfPath) {
+  const textPositionsByPage = new Map()
+  try {
+    const dataBuffer = await fs.promises.readFile(pdfPath)
+    const loadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(dataBuffer),
+      useSystemFonts: true,
+      verbosity: 0
+    })
+    const pdfDocument = await loadingTask.promise
+
+    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum)
+      const viewport = page.getViewport({ scale: 1.0 })
+      const textContent = await page.getTextContent()
+      const positions = []
+
+      for (const item of textContent.items) {
+        // item.transform: [a, b, c, d, e, f]; e,f contém posição
+        const e = item.transform[4]
+        const f = item.transform[5]
+        const y = viewport.height - f // Inverte Y para topo
+        // Filtra artefatos muito pequenos
+        if (item.str && item.str.trim().length > 0) {
+          positions.push(y)
+        }
+      }
+
+      positions.sort((a, b) => a - b)
+      textPositionsByPage.set(pageNum, positions)
+    }
+
+    return { textPositionsByPage }
+  } catch (error) {
+    console.error('❌ Erro ao extrair posições de texto com PDF.js:', error)
+    throw error
+  }
 }
