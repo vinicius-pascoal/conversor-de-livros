@@ -386,7 +386,7 @@ function createChaptersWithImagesInOrderExtended(text, images, totalPages, fastM
     // Agrupa imagens consecutivas (gap menor que 100 pontos)
     const imageGroups = []
     let currentGroup = [sortedImages[0]]
-    
+
     for (let i = 1; i < sortedImages.length; i++) {
       const gap = sortedImages[i].y - sortedImages[i - 1].y
       if (gap < 100) {
@@ -402,14 +402,14 @@ function createChaptersWithImagesInOrderExtended(text, images, totalPages, fastM
 
     // Cria lista de elementos com posição Y
     const elements = []
-    
+
     // Adiciona grupos de imagens (mantém imagens consecutivas juntas)
     for (const group of imageGroups) {
       // Cria um grupo de imagens como um único elemento
       const imagesHtml = group.images.map(img =>
         `<div style="text-align:center;page-break-inside:avoid;margin:8px 0;"><img src="${img.path}" alt="Imagem página ${pageNum}" style="max-width:100%;height:auto;" /></div>`
       ).join('\n')
-      
+
       elements.push({
         type: 'imageGroup',
         y: group.y,
@@ -420,7 +420,7 @@ function createChaptersWithImagesInOrderExtended(text, images, totalPages, fastM
 
     // Divide o texto em parágrafos
     const paragraphs = pageText.split(/\n\n+/).filter(p => p.trim())
-    
+
     // Adiciona parágrafos com posição Y se disponível
     if (paragraphs.length > 0) {
       if (hasTextPositions && sortedImages.length > 0) {
@@ -428,14 +428,14 @@ function createChaptersWithImagesInOrderExtended(text, images, totalPages, fastM
         for (let i = 0; i < paragraphs.length; i++) {
           const posIndex = Math.floor((i / Math.max(1, paragraphs.length - 1)) * (textPositions.length - 1))
           const textY = textPositions[Math.min(posIndex, textPositions.length - 1)]
-          
+
           elements.push({
             type: 'text',
             y: textY,
             content: `<p>${paragraphs[i].replace(/\n/g, '<br>')}</p>`
           })
         }
-        
+
         // Analisa e loga quais textos vêm antes/depois das imagens
         for (let gIdx = 0; gIdx < imageGroups.length; gIdx++) {
           const groupY = imageGroups[gIdx].y
@@ -447,7 +447,7 @@ function createChaptersWithImagesInOrderExtended(text, images, totalPages, fastM
         // Sem posições exatas: agrupa texto antes e depois dos grupos de imagens
         const firstImageY = imageGroups[0].y
         const lastImageY = imageGroups[imageGroups.length - 1].y
-        
+
         // Metade dos parágrafos antes, metade depois
         const midPoint = Math.ceil(paragraphs.length / 2)
         for (let i = 0; i < paragraphs.length; i++) {
