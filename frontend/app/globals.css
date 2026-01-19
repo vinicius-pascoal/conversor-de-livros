@@ -10,63 +10,75 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: url('/fundo.svg') no-repeat center/cover;
+  background: url('/fundo-livro.png') no-repeat center center;
   background-attachment: fixed;
+  background-size: cover;
   min-height: 100vh;
   padding: 20px;
   overflow-y: auto;
 }
 
 .page-wrapper {
-  max-width: 1600px;
+  max-width: 1300px;
   margin: 0 auto;
   padding: 0 20px;
+  position: relative;
 }
 
 .main-title {
-  color: #fff;
+  color: #2a1810;
   text-align: center;
-  font-size: 2.5rem;
-  margin-bottom: 30px;
-  text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.8);
+  font-size: 2rem;
+  margin-bottom: 15px;
+  margin-top: 15px;
+  text-shadow: 2px 2px 8px rgba(255, 255, 255, 0.5);
+  font-weight: 700;
 }
 
 .grid-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 24px;
+  grid-template-columns: 1fr 1fr;
+  gap: 50px;
   margin-bottom: 20px;
+  margin-top: 80px;
+  padding: 0 40px;
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .card {
-  background: #1e1e23;
-  border: 1px solid #DD6600;
-  border-radius: 15px;
-  padding: 28px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  background: rgba(255, 255, 255, 0.85);
+  border: 2px solid rgba(221, 102, 0, 0.3);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  backdrop-filter: blur(5px);
 }
 
 .card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 15px 40px rgba(221, 102, 0, 0.2);
-  border-color: rgba(221, 102, 0, 0.5);
+  box-shadow: 0 8px 20px rgba(221, 102, 0, 0.3);
+  border-color: rgba(221, 102, 0, 0.6);
+  background: rgba(255, 255, 255, 0.95);
 }
 
 .card-title {
-  color: #FF8C00;
-  font-size: 1.4rem;
-  margin-bottom: 18px;
-  font-weight: 600;
+  color: #DD6600;
+  font-size: 1.1rem;
+  margin-bottom: 12px;
+  font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .progress-card,
 .message-card {
   grid-column: 1 / -1;
   animation: slideDown 0.3s ease-out;
+  margin: 0 -20px;
 }
 
 @keyframes slideDown {
@@ -91,7 +103,8 @@ body {
 
 @media (min-width: 768px) {
   .grid-layout {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr 1fr;
+    gap: 80px;
   }
 
   .action-card {
@@ -101,20 +114,24 @@ body {
 
 @media (min-width: 1200px) {
   .grid-layout {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    padding: 0 50px;
+    max-width: 1200px;
   }
 
   .action-card {
-    grid-column: span 3;
+    grid-column: span 2;
   }
 }
 
 h1 {
-  color: #fff;
+  color: #2a1810;
   margin-bottom: 20px;
   text-align: center;
   font-size: 1.75rem;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  text-shadow: 1px 1px 3px rgba(255, 255, 255, 0.5);
+  font-weight: 700;
 }
 
 @media (max-width: 768px) {
@@ -124,44 +141,58 @@ h1 {
   }
 
   .main-title {
-    font-size: 2rem;
+    font-size: 1.8rem;
+    margin-top: 10px;
+    margin-bottom: 10px;
+  }
+
+  .grid-layout {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    margin-top: 50px;
+    padding: 0 20px;
+  }
+
+  .action-card {
+    grid-column: 1;
   }
 }
 
 .upload-area {
-  border: 3px dashed #DD6600;
-  border-radius: 15px;
-  padding: 35px 20px;
+  border: 2px dashed #DD6600;
+  border-radius: 8px;
+  padding: 20px 15px;
   text-align: center;
   cursor: pointer;
   transition: all 0.3s ease;
-  margin-bottom: 15px;
-  background: #252a2f;
+  margin-bottom: 12px;
+  background: rgba(245, 240, 232, 0.5);
 }
 
 .upload-area:hover {
   border-color: #FF8C00;
-  background: #2a2f35;
+  background: rgba(255, 245, 235, 0.7);
 }
 
 .upload-area.dragging {
   border-color: #FF8C00;
-  background: #303640;
+  background: rgba(255, 240, 220, 0.9);
 }
 
 .upload-icon {
-  font-size: 2.5rem;
-  margin-bottom: 10px;
-}
-
-.upload-text {
-  color: #ddd;
-  font-size: 1rem;
+  font-size: 2rem;
   margin-bottom: 8px;
 }
 
+.upload-text {
+  color: #3d2415;
+  font-size: 0.9rem;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
 .upload-subtext {
-  color: #aaa;
+  color: #8b7355;
   font-size: 0.85rem;
 }
 
@@ -170,21 +201,21 @@ h1 {
 }
 
 .selected-file {
-  background: #252a2f;
-  border: 1px solid #DD6600;
-  padding: 15px;
-  border-radius: 10px;
-  margin-bottom: 15px;
+  background: rgba(245, 240, 232, 0.8);
+  border: 2px solid #DD6600;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
 .cover-section {
-  background: #252a2f;
-  border: 1px dashed #DD6600;
-  border-radius: 10px;
-  padding: 14px;
+  background: rgba(245, 240, 232, 0.5);
+  border: 2px dashed #DD6600;
+  border-radius: 8px;
+  padding: 10px;
   margin-bottom: 0;
 }
 
@@ -202,35 +233,36 @@ h1 {
 
 .cover-header h3 {
   font-size: 1rem;
-  color: #ddd;
+  color: #3d2415;
+  font-weight: 600;
 }
 
 .cover-hint {
-  color: #aaa;
+  color: #8b7355;
   font-size: 0.85rem;
   margin-bottom: 10px;
   text-align: center;
 }
 
 .selected-cover {
-  background: #303640;
-  border: 1px solid #DD6600;
+  background: rgba(255, 245, 235, 0.8);
+  border: 2px solid #DD6600;
   padding: 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
 .secondary-btn {
-  background: #252a2f;
-  color: #FF8C00;
+  background: rgba(255, 255, 255, 0.9);
+  color: #DD6600;
   border: 2px solid #DD6600;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 0.95rem;
-  font-weight: 500;
+  font-size: 0.85rem;
+  font-weight: 600;
   transition: all 0.2s ease;
 }
 
@@ -245,16 +277,16 @@ h1 {
   margin: 0 0 15px 0;
   padding: 0;
   background: transparent;
-  border-radius: 10px;
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
 .mode-selector label {
-  font-size: 0.95rem;
-  color: #ddd;
-  font-weight: 500;
+  font-size: 0.85rem;
+  color: #3d2415;
+  font-weight: 600;
 }
 
 .mode-options {
@@ -265,21 +297,21 @@ h1 {
 
 .mode-btn {
   flex: 1;
-  padding: 12px 14px;
+  padding: 8px 10px;
   border: 2px solid #DD6600;
-  background: #252a2f;
-  color: #ccc;
+  background: rgba(255, 255, 255, 0.9);
+  color: #3d2415;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 0.95rem;
-  font-weight: 500;
+  font-size: 0.85rem;
+  font-weight: 600;
   transition: all 0.3s ease;
 }
 
 .mode-btn:hover:not(:disabled) {
   border-color: #FF8C00;
-  background: #303640;
-  color: #FF8C00;
+  background: rgba(255, 245, 235, 0.95);
+  color: #DD6600;
   transform: translateY(-1px);
 }
 
@@ -296,45 +328,45 @@ h1 {
 
 .conversion-progress {
   margin-top: 0;
-  padding: 18px;
-  background: #252a2f;
-  border-radius: 12px;
-  border: 1px solid #DD6600;
+  padding: 12px;
+  background: rgba(245, 240, 232, 0.9);
+  border-radius: 8px;
+  border: 2px solid #DD6600;
 }
 
 .progress-logs {
   margin-top: 12px;
   max-height: 120px;
   overflow-y: auto;
-  background: #1a1d20;
-  border: 1px solid #DD6600;
+  background: rgba(255, 255, 255, 0.8);
+  border: 2px solid #DD6600;
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 12px;
-  color: #ddd;
+  color: #3d2415;
 }
 
 .progress-log-item {
   padding: 3px 0;
-  color: #ccc;
+  color: #5a4a3a;
 }
 
 .progress-phases {
   display: flex;
   justify-content: space-around;
-  margin-bottom: 24px;
-  gap: 12px;
+  margin-bottom: 16px;
+  gap: 8px;
 }
 
 .phase {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 12px;
-  border-radius: 8px;
-  background: #303640;
-  border: 1px solid #DD6600;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 2px solid rgba(221, 102, 0, 0.3);
   flex: 1;
   opacity: 0.5;
   transition: all 0.3s ease;
@@ -342,18 +374,18 @@ h1 {
 
 .phase.active {
   opacity: 1;
-  background: #3a4450;
-  border: 1px solid #FF8C00;
+  background: rgba(255, 245, 235, 0.95);
+  border: 2px solid #FF8C00;
 }
 
 .phase-icon {
-  font-size: 1.8rem;
+  font-size: 1.4rem;
   line-height: 1;
 }
 
 .phase-label {
-  font-size: 0.8rem;
-  color: #aaa;
+  font-size: 0.7rem;
+  color: #8b7355;
   text-align: center;
   font-weight: 500;
 }
@@ -365,12 +397,12 @@ h1 {
 
 .progress-bar-container {
   width: 100%;
-  height: 8px;
-  background: #303640;
-  border-radius: 4px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 3px;
   overflow: hidden;
-  margin-bottom: 16px;
-  border: 1px solid #DD6600;
+  margin-bottom: 12px;
+  border: 2px solid #DD6600;
 }
 
 .progress-bar {
@@ -388,7 +420,7 @@ h1 {
 }
 
 .progress-icon {
-  font-size: 1.8rem;
+  font-size: 1.4rem;
   animation: pulse 1.5s ease-in-out infinite;
 }
 
@@ -405,9 +437,9 @@ h1 {
 }
 
 .progress-text {
-  color: #ddd;
-  font-size: 1.05rem;
-  font-weight: 500;
+  color: #3d2415;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .file-info {
@@ -417,18 +449,19 @@ h1 {
 }
 
 .file-icon {
-  font-size: 2rem;
+  font-size: 1.5rem;
 }
 
 .file-details h3 {
-  color: #FF8C00;
-  font-size: 1rem;
-  margin-bottom: 5px;
+  color: #DD6600;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+  font-weight: 600;
 }
 
 .file-details p {
-  color: #aaa;
-  font-size: 0.9rem;
+  color: #8b7355;
+  font-size: 0.8rem;
 }
 
 .remove-btn {
@@ -455,9 +488,9 @@ h1 {
   background: linear-gradient(135deg, #DD6600 0%, #FF8C00 100%);
   color: white;
   border: none;
-  padding: 18px;
-  border-radius: 12px;
-  font-size: 1.15rem;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 1rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -476,26 +509,26 @@ h1 {
 
 .translate-option {
   margin: 0;
-  padding: 16px;
-  background: #252a2f;
-  border-radius: 10px;
-  border: 1px solid #DD6600;
+  padding: 12px;
+  background: rgba(245, 240, 232, 0.5);
+  border-radius: 8px;
+  border: 2px dashed #DD6600;
 }
 
 .checkbox-label {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   cursor: pointer;
-  font-size: 0.95rem;
-  font-weight: 500;
-  color: #ddd;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #3d2415;
 }
 
 .translate-hint {
   margin-top: 8px;
   margin-left: 30px;
-  color: #aaa;
+  color: #8b7355;
   font-size: 0.85rem;
 }
 
@@ -538,8 +571,9 @@ h1 {
 }
 
 .loading-text {
-  color: #666;
+  color: #5a4a3a;
   font-size: 1rem;
+  font-weight: 500;
 }
 
 .success-message,

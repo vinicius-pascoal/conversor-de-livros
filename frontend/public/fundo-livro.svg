@@ -1,0 +1,103 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="1920" height="1080" fill="#2a1810"/>
+  
+  <!-- Wooden desk texture -->
+  <rect width="1920" height="1080" fill="url(#wood-pattern)"/>
+  
+  <!-- Shadow under book -->
+  <ellipse cx="960" cy="850" rx="650" ry="60" fill="black" opacity="0.3" filter="url(#shadow-blur)"/>
+  
+  <!-- Open Book -->
+  <!-- Left page -->
+  <path d="M 310 150 Q 300 150 295 160 L 295 830 Q 300 840 310 840 L 950 840 Q 955 835 960 540 Q 955 245 950 150 L 310 150 Z" 
+        fill="url(#page-gradient-left)" 
+        stroke="#8b7355" 
+        stroke-width="2"/>
+  
+  <!-- Right page -->
+  <path d="M 970 150 L 1610 150 Q 1620 150 1625 160 L 1625 830 Q 1620 840 1610 840 L 970 840 Q 965 835 960 540 Q 965 245 970 150 Z" 
+        fill="url(#page-gradient-right)" 
+        stroke="#8b7355" 
+        stroke-width="2"/>
+  
+  <!-- Book spine/binding in center -->
+  <rect x="950" y="150" width="20" height="690" fill="url(#spine-gradient)"/>
+  
+  <!-- Page lines left -->
+  <line x1="340" y1="220" x2="920" y2="220" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="340" y1="270" x2="920" y2="270" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="340" y1="320" x2="920" y2="320" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="340" y1="370" x2="920" y2="370" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="340" y1="420" x2="920" y2="420" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="340" y1="470" x2="920" y2="470" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="340" y1="520" x2="920" y2="520" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="340" y1="570" x2="920" y2="570" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="340" y1="620" x2="920" y2="620" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="340" y1="670" x2="920" y2="670" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="340" y1="720" x2="920" y2="720" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="340" y1="770" x2="920" y2="770" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  
+  <!-- Page lines right -->
+  <line x1="1000" y1="220" x2="1580" y2="220" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="1000" y1="270" x2="1580" y2="270" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="1000" y1="320" x2="1580" y2="320" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="1000" y1="370" x2="1580" y2="370" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="1000" y1="420" x2="1580" y2="420" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="1000" y1="470" x2="1580" y2="470" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="1000" y1="520" x2="1580" y2="520" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="1000" y1="570" x2="1580" y2="570" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="1000" y1="620" x2="1580" y2="620" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="1000" y1="670" x2="1580" y2="670" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="1000" y1="720" x2="1580" y2="720" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  <line x1="1000" y1="770" x2="1580" y2="770" stroke="#d4c5b0" stroke-width="1" opacity="0.3"/>
+  
+  <!-- Page edges highlight -->
+  <path d="M 310 150 L 950 150 L 950 840 L 310 840" 
+        fill="none" 
+        stroke="#f5f0e8" 
+        stroke-width="3" 
+        opacity="0.5"/>
+  <path d="M 970 150 L 1610 150 L 1610 840 L 970 840" 
+        fill="none" 
+        stroke="#f5f0e8" 
+        stroke-width="3" 
+        opacity="0.5"/>
+  
+  <!-- Definitions -->
+  <defs>
+    <!-- Wood pattern -->
+    <pattern id="wood-pattern" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
+      <rect width="100" height="100" fill="#3d2415"/>
+      <path d="M0,50 Q25,45 50,50 T100,50" stroke="#2a1810" stroke-width="2" opacity="0.3"/>
+      <path d="M0,30 Q25,28 50,30 T100,30" stroke="#2a1810" stroke-width="1" opacity="0.2"/>
+      <path d="M0,70 Q25,68 50,70 T100,70" stroke="#2a1810" stroke-width="1" opacity="0.2"/>
+    </pattern>
+    
+    <!-- Page gradient left -->
+    <linearGradient id="page-gradient-left" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#e8dcc8;stop-opacity:1" />
+      <stop offset="85%" style="stop-color:#f5f0e8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#d4c5b0;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Page gradient right -->
+    <linearGradient id="page-gradient-right" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#d4c5b0;stop-opacity:1" />
+      <stop offset="15%" style="stop-color:#f5f0e8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e8dcc8;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Spine gradient -->
+    <linearGradient id="spine-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#8b7355;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#5a4a3a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b7355;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Shadow blur -->
+    <filter id="shadow-blur">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="15"/>
+    </filter>
+  </defs>
+</svg>
