@@ -23,9 +23,7 @@
     "epub-gen": "^0.1.0",
     "dotenv": "^16.3.1",
     "swagger-ui-express": "^5.0.0",
-    "swagger-jsdoc": "^6.2.8",
-    "pdfjs-dist": "^4.0.379",
-    "pngjs": "^7.0.0"
+    "swagger-jsdoc": "^6.2.8"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
