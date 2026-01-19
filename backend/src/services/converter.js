@@ -125,12 +125,12 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     if (fastMode) {
       // Modo rápido: um capítulo único com imagens inseridas em ordem
       progress?.({ type: 'phase', phase: 'processing' })
-      chapters = createChaptersWithImagesInOrder(text, extractedImages, pdfData.numpages, true, textPositionsByPage)
+      chapters = createChaptersWithImagesInOrderExtended(text, extractedImages, pdfData.numpages, true, textPositionsByPage)
       console.timeEnd('split-chapters')
     } else {
       progress?.({ type: 'phase', phase: 'processing' })
       chapters = await runWithTimeout(
-        Promise.resolve().then(() => createChaptersWithImagesInOrder(text, extractedImages, pdfData.numpages, false, textPositionsByPage)),
+        Promise.resolve().then(() => createChaptersWithImagesInOrderExtended(text, extractedImages, pdfData.numpages, false, textPositionsByPage)),
         5000,
         'split-chapters'
       )
@@ -357,17 +357,21 @@ async function extractImagesWithPages(pdfPath) {
   }
 }
 
-function createChaptersWithImagesInOrder(text, images, totalPages, fastMode) {
-  // Mantida para compatibilidade; versão estendida abaixo aceita textPositions
-  return createChaptersWithImagesInOrderExtended(text, images, totalPages, fastMode, new Map())
-}
-
 function createChaptersWithImagesInOrderExtended(text, images, totalPages, fastMode, textPositionsByPage) {
   if (!text || totalPages === 0) {
     return [{ title: 'Conteúdo', data: `<p>${text.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</p>` }]
   }
 
-  // Função para processar uma página dividindo texto baseado nas posições reais das imagens
+  // Cria mapa de imagens por página
+  const imagesByPage = new Map()
+  for (const img of images) {
+    if (!imagesByPage.has(img.page)) {
+      imagesByPage.set(img.page, [])
+    }
+    imagesByPage.get(img.page).push(img)
+  }
+
+  // Função para processar uma página, mantendo ordem exata de texto + imagens por posição Y
   function processPageContent(pageNum, pageText, pageImages) {
     if (pageImages.length === 0) {
       // Sem imagens: apenas texto
@@ -377,36 +381,113 @@ function createChaptersWithImagesInOrderExtended(text, images, totalPages, fastM
     // Ordena imagens por posição Y (de cima para baixo)
     const sortedImages = [...pageImages].sort((a, b) => a.y - b.y)
     const textPositions = textPositionsByPage.get(pageNum) || []
-    const hasText = textPositions.length > 0 || pageText.trim().length > 0
-    const highestImageY = sortedImages.length ? sortedImages[0].y : null
-    const lowestImageY = sortedImages.length ? sortedImages[sortedImages.length - 1].y : null
-    const hasTextBeforeImage = hasText && textPositions.some(y => y < (highestImageY ?? Number.MAX_SAFE_INTEGER))
-    const hasTextAfterImage = hasText && textPositions.some(y => y > (lowestImageY ?? -1))
+    const hasTextPositions = textPositions.length > 0
 
-    // Registra diagnóstico para posicionamento
-    console.log(`📄 Pág ${pageNum}: imagens=${sortedImages.length}, textoAntes=${hasTextBeforeImage}, textoDepois=${hasTextAfterImage}`)
+    // Agrupa imagens consecutivas (gap menor que 100 pontos)
+    const imageGroups = []
+    let currentGroup = [sortedImages[0]]
+    
+    for (let i = 1; i < sortedImages.length; i++) {
+      const gap = sortedImages[i].y - sortedImages[i - 1].y
+      if (gap < 100) {
+        // Imagens muito próximas: pertencem ao mesmo grupo
+        currentGroup.push(sortedImages[i])
+      } else {
+        // Grande gap: nova imagem/grupo isolado
+        imageGroups.push({ type: 'imageGroup', images: currentGroup, y: currentGroup[0].y })
+        currentGroup = [sortedImages[i]]
+      }
+    }
+    imageGroups.push({ type: 'imageGroup', images: currentGroup, y: currentGroup[0].y })
 
-    // Regra solicitada: páginas com imagens devem exibir APENAS as imagens
-    return sortedImages.map(img =>
-      `<div style="text-align:center;page-break-inside:avoid;margin:12px 0;"><img src="${img.path}" alt="Imagem página ${pageNum}" style="max-width:100%;height:auto;" /></div>`
-    ).join('\n')
+    // Cria lista de elementos com posição Y
+    const elements = []
+    
+    // Adiciona grupos de imagens (mantém imagens consecutivas juntas)
+    for (const group of imageGroups) {
+      // Cria um grupo de imagens como um único elemento
+      const imagesHtml = group.images.map(img =>
+        `<div style="text-align:center;page-break-inside:avoid;margin:8px 0;"><img src="${img.path}" alt="Imagem página ${pageNum}" style="max-width:100%;height:auto;" /></div>`
+      ).join('\n')
+      
+      elements.push({
+        type: 'imageGroup',
+        y: group.y,
+        content: `<div style="page-break-inside:avoid;">${imagesHtml}</div>`,
+        groupImages: group.images
+      })
+    }
 
+    // Divide o texto em parágrafos
+    const paragraphs = pageText.split(/\n\n+/).filter(p => p.trim())
+    
+    // Adiciona parágrafos com posição Y se disponível
+    if (paragraphs.length > 0) {
+      if (hasTextPositions && sortedImages.length > 0) {
+        // Com posições de texto: analisa texto ANTES e DEPOIS de cada grupo de imagens
+        for (let i = 0; i < paragraphs.length; i++) {
+          const posIndex = Math.floor((i / Math.max(1, paragraphs.length - 1)) * (textPositions.length - 1))
+          const textY = textPositions[Math.min(posIndex, textPositions.length - 1)]
+          
+          elements.push({
+            type: 'text',
+            y: textY,
+            content: `<p>${paragraphs[i].replace(/\n/g, '<br>')}</p>`
+          })
+        }
+        
+        // Analisa e loga quais textos vêm antes/depois das imagens
+        for (let gIdx = 0; gIdx < imageGroups.length; gIdx++) {
+          const groupY = imageGroups[gIdx].y
+          const textBefore = textPositions.filter(t => t < groupY)
+          const textAfter = textPositions.filter(t => t > groupY)
+          console.log(`  ↳ Grupo ${gIdx + 1} (Y:${groupY.toFixed(0)}): ${textBefore.length} textos ANTES, ${textAfter.length} textos DEPOIS`)
+        }
+      } else if (sortedImages.length > 0) {
+        // Sem posições exatas: agrupa texto antes e depois dos grupos de imagens
+        const firstImageY = imageGroups[0].y
+        const lastImageY = imageGroups[imageGroups.length - 1].y
+        
+        // Metade dos parágrafos antes, metade depois
+        const midPoint = Math.ceil(paragraphs.length / 2)
+        for (let i = 0; i < paragraphs.length; i++) {
+          const y = i < midPoint ? firstImageY - 100 - (midPoint - i) * 50 : lastImageY + 50 + (i - midPoint) * 50
+          elements.push({
+            type: 'text',
+            y: y,
+            content: `<p>${paragraphs[i].replace(/\n/g, '<br>')}</p>`
+          })
+        }
+      } else {
+        // Sem imagens: apenas texto
+        for (const para of paragraphs) {
+          elements.push({
+            type: 'text',
+            y: 0,
+            content: `<p>${para.replace(/\n/g, '<br>')}</p>`
+          })
+        }
+      }
+    }
+
+    // Ordena TODOS os elementos por posição Y
+    elements.sort((a, b) => a.y - b.y)
+
+    // Debug
+    const preview = elements.slice(0, 10).map(e =>
+      e.type === 'imageGroup' ? `[${e.content.split('src=').length - 1}IMGS]@${e.y.toFixed(0)}` : `txt@${e.y.toFixed(0)}`
+    ).join(' → ')
+    console.log(`📄 Pág ${pageNum}: ${elements.length} elementos (${imageGroups.length} grupos) | ${preview}${elements.length > 10 ? '...' : ''}`)
+
+    // Retorna elementos na ordem exata do PDF
+    return elements.map(el => el.content).join('\n')
   }
 
   if (fastMode) {
-    // Modo rápido: um capítulo único
-    const charsPerPage = Math.ceil(text.length / totalPages)
+    // Modo rápido: um capítulo único com TODO o texto distribuído corretamente
     let content = ''
     let textPos = 0
-
-    // Agrupa imagens por página
-    const imagesByPage = new Map()
-    for (const img of images) {
-      if (!imagesByPage.has(img.page)) {
-        imagesByPage.set(img.page, [])
-      }
-      imagesByPage.get(img.page).push(img)
-    }
+    const charsPerPage = Math.ceil(text.length / totalPages)
 
     for (let page = 1; page <= totalPages; page++) {
       const pageStart = textPos
@@ -420,25 +501,19 @@ function createChaptersWithImagesInOrderExtended(text, images, totalPages, fastM
 
     return [{ title: 'Conteúdo', data: content }]
   } else {
-    // Modo normal: múltiplos capítulos
-    const charsPerPage = Math.ceil(text.length / totalPages)
+    // Modo normal: múltiplos capítulos - SEM limite fixo de imagens
+    // Estratégia: divide por páginas (10 páginas = 1 capítulo) e coloca TODO conteúdo
     const pagesPerChapter = 10
     const chapters = []
     let textPos = 0
-
-    // Agrupa imagens por página
-    const imagesByPage = new Map()
-    for (const img of images) {
-      if (!imagesByPage.has(img.page)) {
-        imagesByPage.set(img.page, [])
-      }
-      imagesByPage.get(img.page).push(img)
-    }
+    const charsPerPage = Math.ceil(text.length / totalPages)
 
     for (let chapterStart = 1; chapterStart <= totalPages; chapterStart += pagesPerChapter) {
       const chapterEnd = Math.min(chapterStart + pagesPerChapter - 1, totalPages)
       let chapterContent = ''
+      let chapterImages = []
 
+      // Processa todas as páginas do capítulo
       for (let page = chapterStart; page <= chapterEnd; page++) {
         const pageStart = textPos
         const pageEnd = Math.min(textPos + charsPerPage, text.length)
@@ -446,6 +521,7 @@ function createChaptersWithImagesInOrderExtended(text, images, totalPages, fastM
         const pageImages = imagesByPage.get(page) || []
 
         chapterContent += processPageContent(page, pageText, pageImages)
+        chapterImages.push(...pageImages)
         textPos = pageEnd
       }
 
@@ -453,6 +529,8 @@ function createChaptersWithImagesInOrderExtended(text, images, totalPages, fastM
         title: `Capítulo ${chapters.length + 1}`,
         data: chapterContent || '<p></p>'
       })
+
+      console.log(`📖 Capítulo ${chapters.length}: páginas ${chapterStart}-${chapterEnd}, ${chapterImages.length} imagens, ${chapterContent.length} caracteres`)
     }
 
     if (chapters.length === 0) {
