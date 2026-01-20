@@ -1,0 +1,31 @@
+{
+  "name": "conversor-discord-bot",
+  "version": "1.0.0",
+  "description": "Bot Discord para conversão de PDF para EPUB",
+  "main": "src/bot.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/bot.js",
+    "dev": "nodemon src/bot.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "pdf",
+    "epub",
+    "converter"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "epub-gen": "^0.1.0",
+    "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^4.8.69",
+    "canvas": "^3.2.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
