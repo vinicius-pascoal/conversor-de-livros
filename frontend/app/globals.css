@@ -132,7 +132,7 @@ body {
 .message-card {
   grid-column: 1 / -1;
   animation: slideDown 0.3s ease-out;
-  margin: 0 -20px;
+  margin: 0 10px;
 }
 
 @keyframes slideDown {

@@ -241,6 +241,12 @@ export default function Home() {
         </div>
       )}
 
+      {message && (
+        <div className={`card message-card ${message.type === 'success' ? 'success-message' : 'error-message'}`}>
+          {message.text}
+        </div>
+      )}
+
       <div className="grid-layout">
         {/* Card 1: Arquivo PDF */}
         <div className="card upload-card">
@@ -394,12 +400,6 @@ export default function Home() {
           </button>
         </div>
       </div>
-
-      {message && (
-        <div className={`card message-card ${message.type === 'success' ? 'success-message' : 'error-message'}`}>
-          {message.text}
-        </div>
-      )}
     </div>
   )
 }
