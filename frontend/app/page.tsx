@@ -186,7 +186,7 @@ export default function Home() {
       {/* Card Progresso (aparece no topo quando ativo) */}
       {isConverting && (
         <div className="card progress-card">
-          <h2 className="card-title">📊 Progresso</h2>
+          <h2 className="card-title"> Progresso</h2>
           <div className="conversion-progress">
             <div className="progress-phases">
               <div className={`phase ${conversionPhase === 'uploading' || (conversionPhase && conversionPhase !== 'idle') ? 'active' : ''}`}>
@@ -242,54 +242,7 @@ export default function Home() {
       )}
 
       <div className="grid-layout">
-        {/* Card 1: Capa */}
-        <div className="card cover-card">
-          <h2 className="card-title">🖼️ Capa</h2>
-          <div className="cover-section">
-            <p className="cover-hint">JPG ou PNG (opcional)</p>
-            <button
-              type="button"
-              className="secondary-btn full-width"
-              onClick={() => coverInputRef.current?.click()}
-            >
-              {coverFile ? 'Alterar capa' : 'Escolher capa'}
-            </button>
-            <input
-              ref={coverInputRef}
-              type="file"
-              accept="image/png,image/jpeg"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file && file.type.startsWith('image/')) {
-                  setCoverFile(file)
-                  setMessage(null)
-                } else if (file) {
-                  setMessage({ type: 'error', text: 'Capa precisa ser imagem (JPG ou PNG).' })
-                }
-              }}
-              className="file-input"
-            />
-            {coverFile && (
-              <div className="selected-cover">
-                <div className="file-info">
-                  <div className="file-icon">🖼️</div>
-                  <div className="file-details">
-                    <h3>{coverFile.name}</h3>
-                    <p>{formatFileSize(coverFile.size)}</p>
-                  </div>
-                </div>
-                <button
-                  className="remove-btn"
-                  onClick={() => setCoverFile(null)}
-                >
-                  ✕
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Card 2: Arquivo PDF */}
+        {/* Card 1: Arquivo PDF */}
         <div className="card upload-card">
           <h2 className="card-title">📄 Arquivo PDF</h2>
           <div
@@ -337,7 +290,7 @@ export default function Home() {
           )}
         </div>
 
-        {/* Card 3: Configurações */}
+        {/* Card 2: Configurações */}
         <div className="card settings-card">
           <h2 className="card-title">⚙️ Configurações</h2>
 
@@ -375,9 +328,53 @@ export default function Home() {
             </label>
             <p className="translate-hint">Detecta e traduz automaticamente</p>
           </div>
+
+          <h2 className="card-secondary-title">🖼️ Capa</h2>
+          <div className="cover-section">
+            <p className="cover-hint">JPG ou PNG (opcional)</p>
+            <button
+              type="button"
+              className="secondary-btn full-width"
+              onClick={() => coverInputRef.current?.click()}
+            >
+              {coverFile ? 'Alterar capa' : 'Escolher capa'}
+            </button>
+            <input
+              ref={coverInputRef}
+              type="file"
+              accept="image/png,image/jpeg"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file && file.type.startsWith('image/')) {
+                  setCoverFile(file)
+                  setMessage(null)
+                } else if (file) {
+                  setMessage({ type: 'error', text: 'Capa precisa ser imagem (JPG ou PNG).' })
+                }
+              }}
+              className="file-input"
+            />
+            {coverFile && (
+              <div className="selected-cover">
+                <div className="file-info">
+                  <div className="file-icon">🖼️</div>
+                  <div className="file-details">
+                    <h3>{coverFile.name}</h3>
+                    <p>{formatFileSize(coverFile.size)}</p>
+                  </div>
+                </div>
+                <button
+                  className="remove-btn"
+                  onClick={() => setCoverFile(null)}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Card 4: Ação */}
+        {/* Card 3: Ação */}
         <div className="card action-card">
           <button
             className="convert-btn"

@@ -10,7 +10,7 @@
   --ink: #3d2b1f;
   --ink-soft: #5a4a3a;
   --muted: #8b7355;
-  --accent: #6d317c;
+  --accent: #ff800a;
   --accent-2: #ff8c00;
 }
 
@@ -87,6 +87,17 @@ body {
   gap: 8px;
   border-bottom: 1px solid rgba(139, 115, 85, 0.35);
   padding-bottom: 6px;
+}
+
+.card-secondary-title {
+  color: var(--ink);
+  font-size: 1rem;
+  margin-bottom: 10px;
+  margin-top: 10px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .progress-card,
