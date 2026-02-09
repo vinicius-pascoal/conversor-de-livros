@@ -34,8 +34,8 @@ body {
 }
 
 .main-title {
-  color: var(--ink-soft);
-  background-color: var(--paper);
+  color: var(--ink);
+  background-color: var(--paper-2);
   padding: 12px 24px;
   border-radius: 8px;
   width: fit-content;
@@ -44,6 +44,7 @@ body {
   text-align: center;
   font-size: 2rem;
   text-shadow: 1px 1px 6px rgba(255, 255, 255, 0.5);
+  border: 2px dashed var(--muted);
   font-weight: 700;
   letter-spacing: 0.5px;
 }
