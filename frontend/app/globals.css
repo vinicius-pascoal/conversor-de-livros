@@ -10,7 +10,7 @@
   --ink: #3d2b1f;
   --ink-soft: #5a4a3a;
   --muted: #8b7355;
-  --accent: #dd6600;
+  --accent: #6d317c;
   --accent-2: #ff8c00;
 }
 
@@ -18,9 +18,8 @@ body {
   font-family: Georgia, 'Times New Roman', Times, serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: url('/fundo-livro.png') no-repeat center center;
-  background-attachment: fixed;
-  background-size: cover;
+  background: url('/fundo.svg');
+  background-size: auto;
   min-height: 100vh;
   padding: 20px;
   overflow-y: auto;
@@ -36,10 +35,14 @@ body {
 
 .main-title {
   color: var(--ink);
+  background-color: var(--paper);
+  padding: 12px 24px;
+  border-radius: 8px;
+  width: fit-content;
+  margin: 0 auto 12px;
+  box-shadow: 0 4px 12px rgba(61, 43, 31, 0.1);
   text-align: center;
   font-size: 2rem;
-  margin-bottom: 12px;
-  margin-top: 12px;
   text-shadow: 1px 1px 6px rgba(255, 255, 255, 0.5);
   font-weight: 700;
   letter-spacing: 0.5px;
