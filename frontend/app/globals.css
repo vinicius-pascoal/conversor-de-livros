@@ -34,7 +34,7 @@ body {
 }
 
 .main-title {
-  color: var(--ink);
+  color: var(--ink-soft);
   background-color: var(--paper);
   padding: 12px 24px;
   border-radius: 8px;
@@ -77,16 +77,43 @@ body {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(250, 245, 235, 0.96) 100%);
 }
 
+.title-box {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(139, 115, 85, 0.35);
+}
+
+.secondary-title-box {
+  display: flex;
+  align-items: center;
+  margin-top: 20px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(139, 115, 85, 0.35);
+}
+
+.icon-title {
+  width: 28px;
+  height: 28px;
+  margin-right: 10px;
+}
+
+.icon-upload {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 10px;
+}
+
 .card-title {
   color: var(--ink);
   font-size: 1.1rem;
-  margin-bottom: 12px;
   font-weight: 700;
   display: flex;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid rgba(139, 115, 85, 0.35);
-  padding-bottom: 6px;
+
 }
 
 .card-secondary-title {

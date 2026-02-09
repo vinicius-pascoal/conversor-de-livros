@@ -244,7 +244,10 @@ export default function Home() {
       <div className="grid-layout">
         {/* Card 1: Arquivo PDF */}
         <div className="card upload-card">
-          <h2 className="card-title">📄 Arquivo PDF</h2>
+          <div className='title-box '>
+            <img src="/book-bookmark-svgrepo-com.svg" alt="Ícone de livro com marcador" className='icon-title' />
+            <h2 className="card-title">Arquivo PDF</h2>
+          </div>
           <div
             className={`upload-area ${isDragging ? 'dragging' : ''}`}
             onClick={() => fileInputRef.current?.click()}
@@ -252,7 +255,7 @@ export default function Home() {
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
           >
-            <div className="upload-icon">📄</div>
+            <img src="/book-bookmark-svgrepo-com.svg" alt="Ícone de livro com marcador" className='icon-upload' />
             <div className="upload-text">
               {selectedFile ? 'Clique para alterar' : 'Clique ou arraste aqui'}
             </div>
@@ -292,7 +295,10 @@ export default function Home() {
 
         {/* Card 2: Configurações */}
         <div className="card settings-card">
-          <h2 className="card-title">⚙️ Configurações</h2>
+          <div className='title-box'>
+            <img src="/settings-svgrepo-com.svg" alt="Ícone de configurações" className='icon-title' />
+            <h2 className="card-title">Configurações</h2>
+          </div>
 
           <div className="mode-selector">
             <label>Modo de conversão:</label>
@@ -329,7 +335,10 @@ export default function Home() {
             <p className="translate-hint">Detecta e traduz automaticamente</p>
           </div>
 
-          <h2 className="card-secondary-title">🖼️ Capa</h2>
+          <div className='secondary-title-box' >
+            <img src="/album-svgrepo-com.svg" alt="Ícone de imagem" className='icon-title' />
+            <h2 className="card-title">Capa</h2>
+          </div>
           <div className="cover-section">
             <p className="cover-hint">JPG ou PNG (opcional)</p>
             <button
