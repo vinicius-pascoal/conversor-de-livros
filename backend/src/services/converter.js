@@ -160,74 +160,129 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
 // ========== MODO REFLOW COM RECONSTRUÇÃO INTELIGENTE ==========
 
 /**
+ * Traduz conteúdo HTML preservando todas as tags e estrutura
+ * Traduz texto em lotes para evitar rate limiting
+ */
+async function translateHtmlContent(html) {
+  console.log(`  🔄 Iniciando tradução do capítulo (${html.length} chars)...`)
+
+  // Protege blocos que não devem ser alterados
+  const protectedBlocks = []
+  let workingHtml = html
+
+  // Protege tags <figure> completas (incluindo imagens)
+  workingHtml = workingHtml.replace(/<figure[^>]*>[\s\S]*?<\/figure>/gi, (match) => {
+    const idx = protectedBlocks.length
+    protectedBlocks.push(match)
+    return `___FIGURE_${idx}___`
+  })
+
+  // Protege tags <img> standalone
+  workingHtml = workingHtml.replace(/<img[^>]*\/?>/gi, (match) => {
+    const idx = protectedBlocks.length
+    protectedBlocks.push(match)
+    return `___IMG_${idx}___`
+  })
+
+  // Protege <hr>
+  workingHtml = workingHtml.replace(/<hr[^>]*\/?>/gi, (match) => {
+    const idx = protectedBlocks.length
+    protectedBlocks.push(match)
+    return `___HR_${idx}___`
+  })
+
+  console.log(`  🛡️ ${protectedBlocks.length} elementos protegidos (imagens, figuras, etc)`)
+
+  // Coleta todos os textos dentro de tags de conteúdo
+  const textsToTranslate = []
+  const textPattern = /<(h[1-6]|p)\b[^>]*>([\s\S]*?)<\/\1>/gi
+
+  workingHtml = workingHtml.replace(textPattern, (fullMatch, tag, content) => {
+    const textOnly = content.replace(/<[^>]+>/g, '').trim()
+
+    if (textOnly.length > 10) {
+      textsToTranslate.push({
+        original: fullMatch,
+        tag: tag,
+        textOnly: textOnly
+      })
+      return `___TEXT_${textsToTranslate.length - 1}___`
+    }
+
+    return fullMatch
+  })
+
+  console.log(`  📝 ${textsToTranslate.length} blocos de texto para traduzir`)
+
+  if (textsToTranslate.length === 0) {
+    console.log(`  ⏭️ Nada para traduzir, retornando original`)
+    return html
+  }
+
+  // Traduz cada texto individualmente (mais lento mas mais confiável)
+  const totalTexts = textsToTranslate.length
+  console.log(`  📦 Traduzindo ${totalTexts} blocos de texto...`)
+
+  for (let i = 0; i < textsToTranslate.length; i++) {
+    const item = textsToTranslate[i]
+    const progress = Math.round((i / totalTexts) * 100)
+    
+    if (i % 10 === 0 || i === totalTexts - 1) {
+      console.log(`  ⏳ Progresso: ${i + 1}/${totalTexts} (${progress}%)...`)
+    }
+
+    try {
+      const translated = await translateText(item.textOnly)
+      item.translated = translated
+      
+      // Pausa breve para evitar rate limiting (50ms entre traduções)
+      if (i < totalTexts - 1) {
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
+    } catch (err) {
+      console.warn(`  ⚠️ Erro no texto ${i + 1}, mantendo original:`, err.message)
+      item.translated = item.textOnly
+    }
+  }
+
+  console.log(`  ✅ Tradução concluída, reconstruindo HTML...`)
+
+  // Reconstrói substituindo os placeholders
+  for (let i = 0; i < textsToTranslate.length; i++) {
+    const item = textsToTranslate[i]
+    const placeholder = `___TEXT_${i}___`
+    const translatedTag = `<${item.tag}>${item.translated}</${item.tag}>`
+    workingHtml = workingHtml.replace(placeholder, translatedTag)
+  }
+
+  // Restaura blocos protegidos
+  protectedBlocks.forEach((block, idx) => {
+    workingHtml = workingHtml.replace(`___FIGURE_${idx}___`, block)
+    workingHtml = workingHtml.replace(`___IMG_${idx}___`, block)
+    workingHtml = workingHtml.replace(`___HR_${idx}___`, block)
+  })
+
+  console.log(`  🎉 HTML reconstruído com ${protectedBlocks.length} elementos restaurados`)
+
+  return workingHtml
+}
+
+/**
  * Integra imagens extraídas nos capítulos baseado nas páginas
+ * DESABILITADO no modo tradução para evitar duplicação e problemas de posicionamento
  */
 function integrateImagesIntoChapters(chapters, images, pageLayouts) {
   if (!images || images.length === 0) return chapters
 
-  // Cria mapa de imagens por página
-  const imagesByPage = new Map()
-  for (const img of images) {
-    if (!imagesByPage.has(img.page)) {
-      imagesByPage.set(img.page, [])
-    }
-    imagesByPage.get(img.page).push(img)
-  }
-
-  // Ordena imagens por posição Y em cada página (top to bottom)
-  for (const [page, imgs] of imagesByPage.entries()) {
-    imgs.sort((a, b) => b.y - a.y) // Y maior = topo da página
-  }
-
-  // Para cada capítulo, identifica quais páginas ele contém e insere imagens
-  const updatedChapters = chapters.map(chapter => {
-    // Capítulos reconstruídos geralmente contêm blocos de múltiplas páginas
-    // Vamos inserir imagens no final de cada capítulo por enquanto
-    // (uma abordagem mais sofisticada exigiria mapear blocos específicos a páginas)
-
-    let chapterHtml = chapter.data
-
-    // Identifica quais páginas têm conteúdo neste capítulo
-    // Como não temos mapeamento direto, vamos distribuir imagens proporcionalmente
-    const chapterIndex = chapters.indexOf(chapter)
-    const totalPages = pageLayouts.length
-    const pagesPerChapter = Math.ceil(totalPages / chapters.length)
-    const startPage = chapterIndex * pagesPerChapter + 1
-    const endPage = Math.min(startPage + pagesPerChapter - 1, totalPages)
-
-    // Coleta imagens dessas páginas
-    const chapterImages = []
-    for (let page = startPage; page <= endPage; page++) {
-      if (imagesByPage.has(page)) {
-        chapterImages.push(...imagesByPage.get(page))
-      }
-    }
-
-    // Insere imagens no HTML (ao final de cada seção ou distribuídas)
-    if (chapterImages.length > 0) {
-      // Remove tag de fechamento do div se existir
-      chapterHtml = chapterHtml.replace(/<\/div>\s*$/, '')
-
-      // Adiciona imagens (usa caminho completo para epub-gen processar)
-      for (const img of chapterImages) {
-        const imgTag = `<figure class="epub-image">
-  <img src="${img.path}" alt="Imagem da página ${img.page}" style="max-width: 100%; height: auto;"/>
-  <figcaption>Página ${img.page}</figcaption>
-</figure>\n`
-        chapterHtml += imgTag
-      }
-
-      // Fecha div novamente
-      chapterHtml += '</div>'
-    }
-
-    return {
-      ...chapter,
-      data: chapterHtml
-    }
-  })
-
-  return updatedChapters
+  console.log(`  ⚠️ ${images.length} imagens extraídas, mas NÃO serão inseridas no EPUB traduzido`)
+  console.log(`  ℹ️ Para ter imagens: use Fixed Layout SEM tradução`)
+  console.log(`  ℹ️ Para ter tradução: use Reflow SEM imagens (modo atual)`)
+  
+  // DESABILITADO: Não insere imagens no HTML traduzido
+  // Motivo: Causa duplicação de conteúdo e posicionamento incorreto
+  // Solução: Escolher entre Fixed Layout (com imagens) OU Reflow (com tradução)
+  
+  return chapters
 }
 
 async function convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilename, options) {
@@ -297,38 +352,19 @@ async function convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilenam
 
       progress?.({ type: 'log', message: `Traduzindo ${chapterNum}/${totalChapters} (${Math.round(chapterNum / totalChapters * 100)}%)` })
 
-      // Extrai apenas texto (preservando tags de imagem)
-      const imgTags = []
-      let dataWithPlaceholders = chapter.data.replace(/<img[^>]+>/g, (match) => {
-        const placeholder = `___IMG_${imgTags.length}___`
-        imgTags.push(match)
-        return placeholder
-      })
+      try {
+        // Traduz preservando estrutura HTML completa
+        const originalLength = chapter.data.length
+        const originalImages = (chapter.data.match(/<figure|<img/gi) || []).length
 
-      // Remove outras tags HTML para tradução
-      const textOnly = dataWithPlaceholders.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+        chapter.data = await translateHtmlContent(chapter.data)
 
-      if (textOnly.length > 50) {
-        // Traduz o texto
-        const translated = await translateText(textOnly)
+        const newLength = chapter.data.length
+        const newImages = (chapter.data.match(/<figure|<img/gi) || []).length
 
-        // Reconstrói HTML com texto traduzido
-        let translatedHtml = `<div class="chapter">`
-        const paragraphs = translated.split(/\.\s+/).filter(p => p.trim().length > 0)
-
-        for (const para of paragraphs) {
-          translatedHtml += `<p>${para.trim()}${para.trim().endsWith('.') ? '' : '.'}</p>\n`
-        }
-
-        translatedHtml += `</div>`
-
-        // Restaura as imagens
-        imgTags.forEach((imgTag, idx) => {
-          const placeholder = `___IMG_${idx}___`
-          translatedHtml = translatedHtml.replace(placeholder, imgTag)
-        })
-
-        chapter.data = translatedHtml
+        console.log(`  ✅ Capítulo ${chapterNum}: ${originalLength} → ${newLength} chars, ${originalImages} imagens preservadas`)
+      } catch (err) {
+        console.warn(`⚠️ Erro ao traduzir capítulo ${chapterNum}:`, err.message)
       }
     }
 
