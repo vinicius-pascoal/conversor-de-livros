@@ -82,15 +82,8 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     }
 
     if (translateToPt && useFixedLayout) {
-      console.warn('⚠️ Tradução visível requer modo reflow; desabilitando Fixed Layout')
-      progress?.({ type: 'log', message: 'Tradução visível requer Reflow; usando Reflow.' })
-      useFixedLayout = false
-    }
-
-    // NOVA ABORDAGEM: Fixed Layout EPUB
-    if (useFixedLayout) {
-      console.log('🎨 Renderizando páginas em alta qualidade para Fixed Layout...')
-      progress?.({ type: 'phase', phase: 'extracting' })
+      console.log('📖 Tradução + Imagens: usando modo Reflow Enhanced com integração inteligente')
+      progress?.({ type: 'log', message: 'Usando Reflow com tradução e imagens integradas' })
       progress?.({ type: 'log', message: 'Renderizando páginas do PDF...' })
 
       console.time('render-pages')
@@ -226,7 +219,7 @@ async function translateHtmlContent(html) {
   for (let i = 0; i < textsToTranslate.length; i++) {
     const item = textsToTranslate[i]
     const progress = Math.round((i / totalTexts) * 100)
-    
+
     if (i % 10 === 0 || i === totalTexts - 1) {
       console.log(`  ⏳ Progresso: ${i + 1}/${totalTexts} (${progress}%)...`)
     }
@@ -234,7 +227,7 @@ async function translateHtmlContent(html) {
     try {
       const translated = await translateText(item.textOnly)
       item.translated = translated
-      
+
       // Pausa breve para evitar rate limiting (50ms entre traduções)
       if (i < totalTexts - 1) {
         await new Promise(resolve => setTimeout(resolve, 50))
@@ -271,18 +264,243 @@ async function translateHtmlContent(html) {
  * Integra imagens extraídas nos capítulos baseado nas páginas
  * DESABILITADO no modo tradução para evitar duplicação e problemas de posicionamento
  */
+/**
+ * Integra imagens nos capítulos baseado em posições Y REAIS
+ * Abordagem 4 Corrigida: Usa coordenadas Y dos blocos e imagens para posicionamento preciso
+ */
 function integrateImagesIntoChapters(chapters, images, pageLayouts) {
   if (!images || images.length === 0) return chapters
 
-  console.log(`  ⚠️ ${images.length} imagens extraídas, mas NÃO serão inseridas no EPUB traduzido`)
-  console.log(`  ℹ️ Para ter imagens: use Fixed Layout SEM tradução`)
-  console.log(`  ℹ️ Para ter tradução: use Reflow SEM imagens (modo atual)`)
-  
-  // DESABILITADO: Não insere imagens no HTML traduzido
-  // Motivo: Causa duplicação de conteúdo e posicionamento incorreto
-  // Solução: Escolher entre Fixed Layout (com imagens) OU Reflow (com tradução)
-  
-  return chapters
+  console.log(`  🖼️ Integrando ${images.length} imagens usando correlação de posições Y reais...`)
+
+  // Cria mapa de imagens por página
+  const imagesByPage = new Map()
+  for (const img of images) {
+    if (!imagesByPage.has(img.page)) {
+      imagesByPage.set(img.page, [])
+    }
+    imagesByPage.get(img.page).push(img)
+  }
+
+  // Cria mapa de blocos originais por página (com posições Y)
+  const blocksByPage = new Map()
+  for (const pageLayout of pageLayouts) {
+    blocksByPage.set(pageLayout.pageNum, pageLayout.blocks || [])
+  }
+
+  // Processa cada capítulo
+  const enhancedChapters = chapters.map((chapter, idx) => {
+    console.log(`  📄 Processando capítulo ${idx + 1}: "${chapter.title}"...`)
+
+    let html = chapter.data
+
+    // Extrai blocos HTML com suas posições Y
+    const blockRegex = /(<(?:p|h[1-6])(?:\s[^>]*data-y-mid="(\d+)"[^>]*)?>.*?<\/(?:p|h[1-6])>)/gis
+    const blocksWithPositions = []
+    let match
+
+    while ((match = blockRegex.exec(html)) !== null) {
+      blocksWithPositions.push({
+        html: match[1],
+        yMid: match[2] ? parseInt(match[2]) : null,
+        index: match.index
+      })
+    }
+
+    if (blocksWithPositions.length === 0) {
+      console.log(`    ⚠️ Nenhum bloco com posição Y encontrado`)
+      return { ...chapter, data: html }
+    }
+
+    console.log(`  📝 ${blocksWithPositions.length} blocos com posição Y encontrados`)
+
+    // Para cada página, insere imagens nas posições corretas baseado em Y
+    let imagesInserted = 0
+    for (const [pageNum, pageImages] of imagesByPage.entries()) {
+      // Ordena imagens por Y (de cima para baixo, Y maior = topo)
+      const sortedPageImages = [...pageImages].sort((a, b) => b.y - a.y)
+
+      for (const img of sortedPageImages) {
+        // Encontra o bloco de texto mais próximo dessa imagem
+        let closestBlock = null
+        let minDistance = Infinity
+        let insertBefore = true
+
+        for (const block of blocksWithPositions) {
+          if (block.yMid === null) continue
+
+          const distance = Math.abs(img.y - block.yMid)
+          if (distance < minDistance) {
+            minDistance = distance
+            closestBlock = block
+            // Se imagem Y > bloco Y, imagem está ACIMA (inserir antes)
+            // Se imagem Y < bloco Y, imagem está ABAIXO (inserir depois)
+            insertBefore = img.y > block.yMid
+          }
+        }
+
+        if (closestBlock) {
+          const imageHtml = createImageHtml(img, pageNum)
+          const targetHtml = closestBlock.html
+
+          const replacement = insertBefore
+            ? imageHtml + '\n' + targetHtml
+            : targetHtml + '\n' + imageHtml
+
+          // Substitui apenas a primeira ocorrência para manter ordem
+          const index = html.indexOf(targetHtml)
+          if (index !== -1) {
+            html = html.substring(0, index) + replacement + html.substring(index + targetHtml.length)
+            imagesInserted++
+
+            console.log(`    ✅ Imagem P${pageNum} Y:${img.y.toFixed(0)} → ${insertBefore ? 'antes' : 'depois'} bloco Y:${closestBlock.yMid} (dist: ${minDistance.toFixed(0)}px)`)
+
+            // Atualiza a referência do bloco para evitar duplicações
+            closestBlock.html = replacement
+          }
+        } else {
+          console.log(`    ⚠️ Imagem P${pageNum} Y:${img.y.toFixed(0)} → sem bloco próximo, inserindo no início`)
+          html = createImageHtml(img, pageNum) + '\n' + html
+          imagesInserted++
+        }
+      }
+    }
+
+    console.log(`  📊 Total inserido: ${imagesInserted}/${images.length} imagens`)
+
+    return {
+      ...chapter,
+      data: html
+    }
+  })
+
+  console.log(`  ✨ Integração concluída com posicionamento baseado em coordenadas Y!`)
+  return enhancedChapters
+}
+
+/**
+ * Encontra o melhor ponto de inserção para uma imagem baseado em posição Y
+ */
+function findBestInsertionPoint(image, blocks) {
+  if (blocks.length === 0) return null
+
+  let closestBlock = null
+  let minDistance = Infinity
+  let position = 'after' // 'before' ou 'after'
+
+  for (const block of blocks) {
+    // Calcula posição Y média do bloco
+    const blockY = (block.yStart + block.yEnd) / 2
+    const distance = Math.abs(image.y - blockY)
+
+    if (distance < minDistance) {
+      minDistance = distance
+      closestBlock = block
+
+      // Decide se insere antes ou depois baseado na posição relativa
+      // Image Y maior = mais acima na página (PDF coordenadas invertidas)
+      position = image.y > blockY ? 'before' : 'after'
+    }
+  }
+
+  if (!closestBlock) return null
+
+  return {
+    blockText: closestBlock.text,
+    position,
+    distance: minDistance
+  }
+}
+
+/**
+ * Cria HTML para uma imagem com figure e caption
+ */
+function createImageHtml(image, pageNum) {
+  return `
+<figure class="epub-image" data-page="${pageNum}" data-y="${image.y.toFixed(0)}">
+  <img src="${image.path}" alt="Imagem da página ${pageNum}" />
+  <figcaption>Figura - Página ${pageNum}</figcaption>
+</figure>
+`
+}
+
+/**
+ * Insere HTML de imagem no HTML do capítulo no ponto correto
+ * Usa estrutura HTML (ordem e quantidade de elementos) ao invés de buscar texto específico
+ */
+function insertImageIntoHtml(html, imageHtml, insertionPoint) {
+  const { blockText, position } = insertionPoint
+
+  // Estratégia: conta quantos blocos (p, h1-h6) existem e insere proporcionalmente
+  // Extrai todos os blocos de conteúdo
+  const blockRegex = /(<(?:p|h[1-6])[^>]*>.*?<\/(?:p|h[1-6])>)/gis
+  const blocks = html.match(blockRegex) || []
+
+  if (blocks.length === 0) {
+    // Sem blocos estruturados, adiciona no início
+    return imageHtml + '\n' + html
+  }
+
+  // Tenta encontrar um bloco que contenha parte do texto original
+  // Usa apenas os primeiros 30 caracteres para busca fuzzy
+  const searchText = blockText.substring(0, 30).toLowerCase()
+  let bestMatchIndex = -1
+  let bestMatchScore = 0
+
+  for (let i = 0; i < blocks.length; i++) {
+    // Remove HTML tags para comparação
+    const blockContent = blocks[i].replace(/<[^>]+>/g, '').toLowerCase()
+
+    // Calcula similaridade básica (palavras em comum)
+    const words = searchText.split(/\s+/).filter(w => w.length > 3)
+    let matchCount = 0
+    for (const word of words) {
+      if (blockContent.includes(word)) matchCount++
+    }
+
+    const score = matchCount / Math.max(words.length, 1)
+    if (score > bestMatchScore) {
+      bestMatchScore = score
+      bestMatchIndex = i
+    }
+  }
+
+  // Se encontrou uma correspondência razoável (>30%), usa ela
+  if (bestMatchIndex >= 0 && bestMatchScore > 0.3) {
+    const targetBlock = blocks[bestMatchIndex]
+    const targetIndex = position === 'before' ? bestMatchIndex : bestMatchIndex + 1
+
+    // Reconstrói HTML inserindo imagem na posição correta
+    const beforeBlocks = blocks.slice(0, targetIndex)
+    const afterBlocks = blocks.slice(targetIndex)
+
+    // Preserva conteúdo que não está nos blocos
+    let result = html
+    const insertMarker = '___INSERT_IMAGE_HERE___'
+
+    // Substitui o bloco alvo por um marcador temporário
+    result = result.replace(targetBlock, targetBlock + '\n' + insertMarker)
+
+    // Substitui o marcador pela imagem
+    result = result.replace(insertMarker, imageHtml)
+
+    return result
+  }
+
+  // Fallback: insere após o primeiro bloco (geralmente título)
+  if (blocks.length > 0) {
+    return html.replace(blocks[0], blocks[0] + '\n' + imageHtml)
+  }
+
+  // Último fallback: adiciona no início
+  return imageHtml + '\n' + html
+}
+
+/**
+ * Escapa string para uso em regex
+ */
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 async function convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilename, options) {
@@ -330,13 +548,7 @@ async function convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilenam
   progress?.({ type: 'log', message: `${chapters.length} seções identificadas` })
   console.timeEnd('reconstruct-chapters')
 
-  // Adiciona imagens nos capítulos baseado nas páginas
-  if (extractedImages.length > 0) {
-    chapters = integrateImagesIntoChapters(chapters, extractedImages, layoutAnalysis.pages)
-    console.log(`✅ Imagens integradas nos capítulos`)
-    progress?.({ type: 'log', message: `Imagens integradas aos capítulos` })
-  }
-
+  // Traduz conteúdo dos capítulos ANTES de adicionar imagens (para preservar posições)
   // Traduz conteúdo dos capítulos se solicitado
   console.log('🔍 [DEBUG] translateToPt =', translateToPt, ', detectedLang =', detectedLang)
   if (translateToPt && detectedLang !== 'pt' && detectedLang !== 'unknown') {
@@ -373,8 +585,22 @@ async function convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilenam
     console.timeEnd('translation')
   }
 
+  // Integra imagens nos capítulos DEPOIS da tradução (Abordagem 4)
+  if (extractedImages && extractedImages.length > 0) {
+    console.log('🖼️ Integrando imagens nos capítulos usando posições Y...')
+    progress?.({ type: 'log', message: 'Integrando imagens nos capítulos...' })
+    const integratedChapters = integrateImagesIntoChapters(chapters, extractedImages, layoutAnalysis.pages)
+    if (integratedChapters && integratedChapters.length > 0) {
+      chapters = integratedChapters
+      console.log('✅ Imagens integradas com sucesso!')
+      progress?.({ type: 'log', message: 'Imagens integradas!' })
+    } else {
+      console.warn('⚠️ Integração retornou capítulos vazios, mantendo originais')
+    }
+  }
+
   // Gera EPUB com estrutura reconstruída
-  console.log(`📊 Preparando EPUB: ${chapters.length} capítulos, ${extractedImages.length} imagens`)
+  console.log(`📊 Preparando EPUB: ${chapters?.length || 0} capítulos, ${extractedImages?.length || 0} imagens`)
 
   // Verifica se há imagens nos capítulos
   const totalImagesInChapters = chapters.reduce((count, ch) => {

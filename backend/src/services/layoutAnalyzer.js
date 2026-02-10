@@ -267,6 +267,7 @@ function orderBlocksForReading(blocks, columns) {
 
 /**
  * Converte blocos analisados em HTML estruturado
+ * Preserva posições Y como atributos data para posicionamento de imagens
  */
 export function blocksToHtml(blocks, options = {}) {
   const { preserveFormatting = true, addSeparators = true } = options
@@ -274,24 +275,29 @@ export function blocksToHtml(blocks, options = {}) {
   let html = ''
 
   for (const block of blocks) {
+    // Adiciona atributos data com informações de posição
+    const positionData = block.yStart && block.yEnd
+      ? ` data-y-start="${block.yStart.toFixed(0)}" data-y-end="${block.yEnd.toFixed(0)}" data-y-mid="${((block.yStart + block.yEnd) / 2).toFixed(0)}"`
+      : ''
+
     switch (block.type) {
       case 'heading':
         const level = block.importance === 1 ? 'h1' : block.importance === 2 ? 'h2' : 'h3'
-        html += `<${level}>${escapeHtml(block.text)}</${level}>\n`
+        html += `<${level}${positionData}>${escapeHtml(block.text)}</${level}>\n`
         break
 
       case 'paragraph':
-        html += `<p>${escapeHtml(block.text)}</p>\n`
+        html += `<p${positionData}>${escapeHtml(block.text)}</p>\n`
         break
 
       case 'caption':
-        html += `<p class="caption"><em>${escapeHtml(block.text)}</em></p>\n`
+        html += `<p class="caption"${positionData}><em>${escapeHtml(block.text)}</em></p>\n`
         break
 
       case 'header':
       case 'footer':
         if (options.includeHeaderFooter) {
-          html += `<p class="${block.type}"><small>${escapeHtml(block.text)}</small></p>\n`
+          html += `<p class="${block.type}"${positionData}><small>${escapeHtml(block.text)}</small></p>\n`
         }
         break
     }

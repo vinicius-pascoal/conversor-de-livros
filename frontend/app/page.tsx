@@ -13,6 +13,7 @@ export default function Home() {
   const [conversionMode, setConversionMode] = useState<ConversionMode>('fast')
   const [epubType, setEpubType] = useState<EpubType>('reflow')
   const [translateToPt, setTranslateToPt] = useState(false)
+  const [extractImages, setExtractImages] = useState(true)
   const [isConverting, setIsConverting] = useState(false)
   const [conversionPhase, setConversionPhase] = useState<ConversionPhase>('idle')
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null)
@@ -122,7 +123,7 @@ export default function Home() {
 
       const useFixedLayout = epubType === 'fixed'
       const response = await axios.post(
-        `${apiUrl}/api/convert?mode=${conversionMode}&jobId=${jobId}&translate=${translateToPt}&useFixedLayout=${useFixedLayout}`,
+        `${apiUrl}/api/convert?mode=${conversionMode}&jobId=${jobId}&translate=${translateToPt}&useFixedLayout=${useFixedLayout}&extractImages=${extractImages}`,
         formData,
         {
           responseType: 'blob',
@@ -368,6 +369,18 @@ export default function Home() {
               <span>🌐 Traduzir para pt-br</span>
             </label>
             <p className="translate-hint">Detecta e traduz automaticamente</p>
+          </div>
+          <div className="translate-option">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={extractImages}
+                onChange={(e) => setExtractImages(e.target.checked)}
+                disabled={isConverting}
+              />
+              <span>🖼️ Extrair imagens do PDF</span>
+            </label>
+            <p className="translate-hint">Desative para EPUBs mais leves e rápidos</p>
           </div>
 
           <div className='secondary-title-box' >

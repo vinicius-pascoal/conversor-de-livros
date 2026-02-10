@@ -162,6 +162,9 @@ router.post('/convert', (req, res, next) => {
     const keepImages = req.query.keepImages
       ? ['true', '1', 'yes', 'on'].includes(String(req.query.keepImages).toLowerCase())
       : true
+    const extractImages = req.query.extractImages !== undefined
+      ? ['true', '1', 'yes', 'on'].includes(String(req.query.extractImages).toLowerCase())
+      : true // Padrão: extrair imagens
     const translate = req.query.translate
       ? ['true', '1', 'yes', 'on'].includes(String(req.query.translate).toLowerCase())
       : false
@@ -170,7 +173,7 @@ router.post('/convert', (req, res, next) => {
       : true // Fixed Layout é padrão
 
     console.log('📄 [CONVERT] Arquivo recebido:', pdfFile.originalname, 'tamanho:', pdfFile.size, 'bytes')
-    console.log('📄 [CONVERT] Configuração: fastMode=%s, keepImages=%s, translate=%s, useFixedLayout=%s', fastMode, keepImages, translate, useFixedLayout)
+    console.log('📄 [CONVERT] Configuração: fastMode=%s, keepImages=%s, extractImages=%s, translate=%s, useFixedLayout=%s', fastMode, keepImages, extractImages, translate, useFixedLayout)
     if (jobId) {
       console.log('📡 [CONVERT] Emitindo progresso para jobId:', jobId)
       emitProgress(jobId, { type: 'log', message: `Arquivo recebido: ${pdfFile.originalname}` })
@@ -190,7 +193,7 @@ router.post('/convert', (req, res, next) => {
     const result = await convertPdfToEpub(pdfPath, epubPath, pdfFile.originalname, {
       fastMode,
       coverPath,
-      keepImages,
+      keepImages: extractImages, // usa extractImages como keepImages
       translate,
       useFixedLayout,
       progress: jobId ? (evt) => emitProgress(jobId, evt) : null
