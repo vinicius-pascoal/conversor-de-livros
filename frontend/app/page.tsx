@@ -4,12 +4,14 @@ import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
 
 type ConversionMode = 'fast' | 'full'
+type EpubType = 'fixed' | 'reflow'
 type ConversionPhase = 'idle' | 'uploading' | 'extracting' | 'processing' | 'generating' | 'complete'
 
 export default function Home() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [conversionMode, setConversionMode] = useState<ConversionMode>('fast')
+  const [epubType, setEpubType] = useState<EpubType>('reflow')
   const [translateToPt, setTranslateToPt] = useState(false)
   const [isConverting, setIsConverting] = useState(false)
   const [conversionPhase, setConversionPhase] = useState<ConversionPhase>('idle')
@@ -118,8 +120,9 @@ export default function Home() {
 
       console.log('📤 [FRONTEND] Iniciando POST com axios...')
 
+      const useFixedLayout = epubType === 'fixed'
       const response = await axios.post(
-        `${apiUrl}/api/convert?mode=${conversionMode}&jobId=${jobId}&translate=${translateToPt}`,
+        `${apiUrl}/api/convert?mode=${conversionMode}&jobId=${jobId}&translate=${translateToPt}&useFixedLayout=${useFixedLayout}`,
         formData,
         {
           responseType: 'blob',
@@ -327,6 +330,32 @@ export default function Home() {
               </button>
             </div>
           </div>
+
+          <div className="mode-selector">
+            <label>Tipo de EPUB:</label>
+            <div className="mode-options">
+              <button
+                className={`mode-btn ${epubType === 'fixed' ? 'active' : ''}`}
+                onClick={() => setEpubType('fixed')}
+                disabled={isConverting}
+                title="Layout fixo - preserva design original perfeitamente (arquivos maiores)"
+              >
+                🎨 Fixed Layout
+              </button>
+              <button
+                className={`mode-btn ${epubType === 'reflow' ? 'active' : ''}`}
+                onClick={() => setEpubType('reflow')}
+                disabled={isConverting}
+                title="Texto fluido - se adapta ao tamanho da tela (arquivos menores)"
+              >
+                📱 Reflow
+              </button>
+            </div>
+          </div>
+          <p className="translate-hint">Reflow recomendado para Kindle; Fixed Layout preserva o design.</p>
+          {translateToPt && epubType === 'fixed' && (
+            <p className="translate-hint">Para traducao visivel, use Reflow.</p>
+          )}
 
           <div className="translate-option">
             <label className="checkbox-label">

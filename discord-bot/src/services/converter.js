@@ -6,6 +6,9 @@ import { promisify } from 'util'
 import pdfParse from 'pdf-parse'
 import Epub from 'epub-gen'
 import { translateTextWithProgress, detectLanguage } from './translator.js'
+import { renderPdfPagesToSvg } from './pdfRenderer.js'
+import { generateFixedLayoutEpub } from './fixedLayoutEpub.js'
+import { analyzePdfLayout, reconstructChapters } from './layoutAnalyzer.js'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { createCanvas } from 'canvas'
 
@@ -28,15 +31,17 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     let coverPath = options.coverPath || null
     const keepImages = options.keepImages !== false
     const translateToPt = options.translate === true
+    let useFixedLayout = options.useFixedLayout !== false // Agora Fixed Layout é padrão
     const progress = typeof options.progress === 'function' ? options.progress : null
-    console.log('🔄 Iniciando conversão...')
+
+    console.log('🔄 Iniciando conversão com Fixed Layout EPUB...')
     console.log('⚡ fastMode:', fastMode)
-    console.log('🖼️ keepImages:', keepImages)
+    console.log('🖼️ useFixedLayout:', useFixedLayout)
     console.log('🌐 translate:', translateToPt)
     console.time('pdf-total')
     progress?.({ type: 'log', message: 'Iniciando conversão' })
 
-    // Ler o PDF
+    // Lê metadados básicos do PDF
     console.time('pdf-read')
     const dataBuffer = await fs.promises.readFile(pdfPath)
     progress?.({ type: 'log', message: 'PDF carregado em memória' })
@@ -52,17 +57,16 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     console.log('📝 Texto extraído:', pdfData.text.length, 'caracteres')
 
     if (!pdfData.text || pdfData.text.trim().length === 0) {
-      throw new Error('Nenhum texto extraído do PDF (pode ser digitalizado sem OCR)')
+      console.warn('⚠️ Pouco ou nenhum texto extraído - PDF pode ser digitalizado')
     }
 
-    // Limita tamanho para evitar lentidão extrema em PDFs gigantes
-    const MAX_CHARS = 800_000
-    let text = pdfData.text.length > MAX_CHARS
-      ? pdfData.text.slice(0, MAX_CHARS)
-      : pdfData.text
+    // Extrair título do nome do arquivo
+    const title = originalFilename.replace('.pdf', '') || 'Documento Convertido'
 
-    // Traduzir texto se solicitado
-    if (translateToPt) {
+    let text = pdfData.text
+
+    // Traduzir texto se solicitado (para metadados e busca)
+    if (translateToPt && text && text.trim().length > 0) {
       console.time('translation')
       progress?.({ type: 'phase', phase: 'translating' })
       progress?.({ type: 'log', message: 'Detectando idioma...' })
@@ -72,8 +76,8 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
       progress?.({ type: 'log', message: `Idioma detectado: ${detectedLang}` })
 
       if (detectedLang !== 'pt' && detectedLang !== 'unknown') {
-        progress?.({ type: 'log', message: 'Traduzindo para português...' })
-        text = await translateTextWithProgress(text, progress)
+        progress?.({ type: 'log', message: 'Traduzindo texto extraído...' })
+        text = await translateTextWithProgress(text.slice(0, 100000), progress) // Limita para não travar
         console.log('✅ Texto traduzido para pt-br')
         progress?.({ type: 'log', message: 'Tradução concluída!' })
       } else {
@@ -83,103 +87,73 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
       console.timeEnd('translation')
     }
 
-    // Extrair título do nome do arquivo ou usar texto
-    const title = originalFilename.replace('.pdf', '') || 'Documento Convertido'
+    if (translateToPt && useFixedLayout) {
+      console.warn('⚠️ Tradução visível requer modo reflow; desabilitando Fixed Layout')
+      progress?.({ type: 'log', message: 'Tradução visível requer Reflow; usando Reflow.' })
+      useFixedLayout = false
+    }
 
-    // Extrair imagens do PDF (opcional) com informação de página
-    let assetsDir = null
-    let extractedImages = []
-    let textPositionsByPage = new Map()
-    if (keepImages) {
-      console.time('pdf-images')
+    // NOVA ABORDAGEM: Fixed Layout EPUB
+    if (useFixedLayout) {
+      console.log('🎨 Renderizando páginas em alta qualidade para Fixed Layout...')
       progress?.({ type: 'phase', phase: 'extracting' })
-      try {
-        const imagesResult = await extractImagesWithPages(pdfPath)
-        assetsDir = imagesResult.assetsDir
-        extractedImages = imagesResult.images
-        console.log('🖼️ Imagens extraídas:', extractedImages.length)
-        progress?.({ type: 'log', message: `Imagens extraídas: ${extractedImages.length}` })
-        if (!coverPath && extractedImages.length > 0) {
-          coverPath = extractedImages[0].path
-          console.log('📔 Capa definida pela primeira imagem extraída')
-          progress?.({ type: 'log', message: 'Capa definida pela primeira imagem' })
+      progress?.({ type: 'log', message: 'Renderizando páginas do PDF...' })
+
+      console.time('render-pages')
+      const renderResult = await renderPdfPagesToSvg(pdfPath, {
+        scale: 2.0,
+        progress: (msg) => {
+          console.log(msg)
+          progress?.({ type: 'log', message: msg })
         }
-        // Extração adicional: posições de texto por página para validação de ordem
-        try {
-          const textPosResult = await extractTextPositionsWithPages(pdfPath)
-          textPositionsByPage = textPosResult.textPositionsByPage
-          console.log('📝 Posições de texto extraídas para', textPositionsByPage.size, 'páginas')
-        } catch (txErr) {
-          console.warn('⚠️ Falha ao extrair posições de texto:', txErr.message)
-        }
-      } catch (err) {
-        console.error('⚠️ Falha ao extrair imagens:', err.message)
-        progress?.({ type: 'log', message: `Falha ao extrair imagens: ${err.message}` })
+      })
+      console.timeEnd('render-pages')
+
+      const { pages, assetsDir } = renderResult
+      console.log(`✅ ${pages.length} páginas renderizadas`)
+
+      // Define capa como primeira página se não fornecida
+      if (!coverPath && pages.length > 0) {
+        coverPath = pages[0].imagePath
+        console.log('📔 Capa definida pela primeira página')
       }
-      console.timeEnd('pdf-images')
-    }
 
-    // Criar capítulos com texto e imagens na ordem exata do PDF
-    console.time('split-chapters')
-    let chapters
-    if (fastMode) {
-      // Modo rápido: um capítulo único com imagens inseridas em ordem
-      progress?.({ type: 'phase', phase: 'processing' })
-      chapters = createChaptersWithImagesInOrderExtended(text, extractedImages, pdfData.numpages, true, textPositionsByPage)
-      console.timeEnd('split-chapters')
-    } else {
-      progress?.({ type: 'phase', phase: 'processing' })
-      chapters = await runWithTimeout(
-        Promise.resolve().then(() => createChaptersWithImagesInOrderExtended(text, extractedImages, pdfData.numpages, false, textPositionsByPage)),
-        5000,
-        'split-chapters'
-      )
-      console.timeEnd('split-chapters')
-    }
+      console.log('📚 Gerando EPUB Fixed Layout...')
+      progress?.({ type: 'phase', phase: 'generating' })
+      progress?.({ type: 'log', message: 'Montando estrutura EPUB...' })
 
-    // Configuração do EPUB
-    const epubOptions = {
-      title: title,
-      author: 'Autor Desconhecido',
-      publisher: 'Conversor PDF-EPUB',
-      cover: coverPath || '',
-      content: chapters,
-      lang: 'pt',
-      tocTitle: 'Índice',
-      appendChapterTitles: true,
-      customOpfTemplatePath: null,
-      customNcxTocTemplatePath: null,
-      customHtmlTocTemplatePath: null,
-      version: 3
-    }
-
-    console.log('📚 Gerando EPUB...')
-    progress?.({ type: 'phase', phase: 'generating' })
-    console.time('epub-gen')
-
-    try {
-      // Gerar o EPUB
-      await runWithTimeout(new Epub(epubOptions, epubPath).promise, fastMode ? 15000 : 30000, 'epub-gen')
-    } catch (err) {
-      console.error('⚠️ epub-gen falhou, tentando modo simplificado:', err.message)
-      // fallback simples: um capítulo único com o texto plano para não travar
-      const fallbackOptions = {
-        title: title,
+      console.time('epub-gen')
+      await generateFixedLayoutEpub({
+        title,
         author: 'Autor Desconhecido',
-        cover: coverPath || '',
-        content: [{ title: 'Conteúdo', data: `<pre>${escapeHtml(text)}</pre>` }],
-        lang: 'pt'
-      }
-      await runWithTimeout(new Epub(fallbackOptions, epubPath).promise, 15000, 'epub-gen-fallback')
+        publisher: 'Conversor PDF-EPUB (Fixed Layout)',
+        language: 'pt',
+        pages: pages,
+        coverImagePath: coverPath
+      }, epubPath)
+      console.timeEnd('epub-gen')
+
+      console.timeEnd('pdf-total')
+      console.log('✨ EPUB Fixed Layout gerado com sucesso!')
+      progress?.({ type: 'phase', phase: 'complete' })
+      progress?.({ type: 'log', message: 'Conversão concluída!' })
+
+      return { epubPath, assetsDir }
     }
 
-    console.timeEnd('epub-gen')
-    console.timeEnd('pdf-total')
-    console.log('✨ EPUB gerado com sucesso!')
-    progress?.({ type: 'phase', phase: 'complete' })
-    progress?.({ type: 'log', message: 'EPUB gerado com sucesso' })
+    // MODO REFLOW COM RECONSTRUÇÃO INTELIGENTE DE LAYOUT
+    console.log('📐 Usando modo Reflow com reconstrução inteligente de layout')
+    progress?.({ type: 'log', message: 'Analisando estrutura do PDF...' })
 
-    return { epubPath, assetsDir }
+    return await convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilename, {
+      ...options,
+      text,
+      pdfData,
+      title,
+      coverPath,
+      progress,
+      dataBuffer
+    })
 
   } catch (error) {
     console.error('Erro na conversão:', error)
@@ -187,174 +161,355 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
   }
 }
 
-async function extractImagesWithPages(pdfPath) {
-  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'pdfimgs-'))
-  const images = []
+// ========== MODO REFLOW COM RECONSTRUÇÃO INTELIGENTE ==========
+
+async function convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilename, options) {
+  const { fastMode, text, pdfData, title, coverPath, progress, translateToPt, dataBuffer } = options
+
+  console.time('layout-analysis')
+  progress?.({ type: 'phase', phase: 'extracting' })
+  progress?.({ type: 'log', message: 'Analisando estrutura de layout do PDF...' })
+
+  // Analisa layout do PDF
+  const layoutAnalysis = await analyzePdfLayout(dataBuffer)
+  console.log(`📐 Layout analisado: ${layoutAnalysis.totalPages} páginas`)
+  progress?.({ type: 'log', message: `${layoutAnalysis.totalPages} páginas analisadas` })
+  console.timeEnd('layout-analysis')
+
+  // Reconstrói capítulos a partir da análise
+  console.time('reconstruct-chapters')
+  progress?.({ type: 'phase', phase: 'processing' })
+  progress?.({ type: 'log', message: 'Reconstruindo estrutura de capítulos...' })
+
+  let chapters = reconstructChapters(layoutAnalysis.pages, {
+    preserveFormatting: true,
+    addSeparators: true,
+    includeHeaderFooter: false
+  })
+  console.log(`📚 ${chapters.length} capítulos reconstruídos`)
+  progress?.({ type: 'log', message: `${chapters.length} seções identificadas` })
+  console.timeEnd('reconstruct-chapters')
+
+  // Traduz conteúdo dos capítulos se solicitado
+  if (translateToPt && text && text.trim().length > 0) {
+    console.time('translation')
+    progress?.({ type: 'log', message: 'Traduzindo conteúdo preservando estrutura...' })
+
+    const detectedLang = await detectLanguage(text)
+    console.log('🌍 Idioma detectado:', detectedLang)
+
+    if (detectedLang !== 'pt' && detectedLang !== 'unknown') {
+      progress?.({ type: 'log', message: `Traduzindo de ${detectedLang} para pt-br...` })
+
+      // Traduz cada capítulo mantendo HTML
+      for (let i = 0; i < chapters.length; i++) {
+        const chapter = chapters[i]
+        progress?.({ type: 'log', message: `Traduzindo seção ${i + 1}/${chapters.length}...` })
+
+        // Remove tags HTML temporariamente
+        const textOnly = chapter.data.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+
+        if (textOnly.length > 100) {
+          const translated = await translateTextWithProgress(textOnly, progress)
+          // Reconstrói com estrutura HTML básica
+          chapter.data = `<div class="chapter">${translated.split('\n\n').map(p => `<p>${p}</p>`).join('\n')}</div>`
+        }
+      }
+      console.log('✅ Capítulos traduzidos')
+      progress?.({ type: 'log', message: 'Tradução concluída!' })
+    } else {
+      console.log('ℹ️ Texto já está em português')
+    }
+    console.timeEnd('translation')
+  }
+
+  // Gera EPUB com estrutura reconstruída
+  const epubOptions = {
+    title,
+    author: 'Autor Desconhecido',
+    publisher: 'Conversor PDF-EPUB (Reflow Inteligente)',
+    cover: coverPath || '',
+    content: chapters,
+    lang: 'pt',
+    tocTitle: 'Índice',
+    appendChapterTitles: true,
+    version: 3,
+    css: `
+      body { font-family: serif; line-height: 1.6; margin: 1em; }
+      h1 { font-size: 1.8em; margin-top: 1em; margin-bottom: 0.5em; page-break-before: always; }
+      h2 { font-size: 1.5em; margin-top: 0.8em; margin-bottom: 0.4em; }
+      h3 { font-size: 1.2em; margin-top: 0.6em; margin-bottom: 0.3em; }
+      p { text-align: justify; margin: 0.5em 0; }
+      .caption { font-style: italic; font-size: 0.9em; text-align: center; }
+      hr { border: 0; border-top: 1px solid #ccc; margin: 1em 0; }
+    `
+  }
+
+  console.log('📚 Gerando EPUB Reflow otimizado...')
+  progress?.({ type: 'phase', phase: 'generating' })
+  console.time('epub-gen')
 
   try {
-    // Lê o PDF
-    const dataBuffer = await fs.promises.readFile(pdfPath)
-    const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(dataBuffer),
-      useSystemFonts: true,
-      verbosity: 0 // Reduz logs do pdfjs
-    })
-    const pdfDocument = await loadingTask.promise
+    await runWithTimeout(
+      new Epub(epubOptions, epubPath).promise,
+      fastMode ? 15000 : 30000,
+      'epub-gen'
+    )
+  } catch (err) {
+    console.error('⚠️ Erro ao gerar EPUB, tentando modo simplificado:', err.message)
+    const fallbackOptions = {
+      title,
+      author: 'Autor Desconhecido',
+      cover: coverPath || '',
+      content: chapters.slice(0, 1),
+      lang: 'pt'
+    }
+    await runWithTimeout(
+      new Epub(fallbackOptions, epubPath).promise,
+      15000,
+      'epub-gen-fallback'
+    )
+  }
 
-    console.log(`📖 PDF carregado: ${pdfDocument.numPages} páginas`)
+  console.timeEnd('epub-gen')
+  console.log('✨ EPUB Reflow com layout inteligente gerado!')
+  progress?.({ type: 'phase', phase: 'complete' })
 
-    // Itera por todas as páginas
-    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
-      const page = await pdfDocument.getPage(pageNum)
-      const viewport = page.getViewport({ scale: 1.0 })
+  return { epubPath }
+}
 
-      // Obtém operadores da página para encontrar imagens e suas posições
-      const ops = await page.getOperatorList()
+// ========== MODO LEGADO (FALLBACK) ==========
 
-      // Rastreia transformações para calcular posições reais
-      const transformStack = [[1, 0, 0, 1, 0, 0]] // Matriz identidade inicial
-      let imageIndex = 0
+async function convertPdfToEpubLegacy(pdfPath, epubPath, originalFilename, options) {
+  const { fastMode, keepImages, text, pdfData, title, coverPath, progress } = options
 
-      for (let i = 0; i < ops.fnArray.length; i++) {
-        const fn = ops.fnArray[i]
-        const args = ops.argsArray[i]
+  let assetsDir = null
+  let extractedImages = []
+  let textPositionsByPage = new Map()
 
-        // Rastreia transformações de coordenadas
-        if (fn === pdfjsLib.OPS.save) {
-          transformStack.push([...transformStack[transformStack.length - 1]])
-        } else if (fn === pdfjsLib.OPS.restore) {
-          if (transformStack.length > 1) transformStack.pop()
-        } else if (fn === pdfjsLib.OPS.transform) {
-          const current = transformStack[transformStack.length - 1]
-          const [a, b, c, d, e, f] = args
-          // Multiplica matrizes
-          transformStack[transformStack.length - 1] = [
-            a * current[0] + b * current[2],
-            a * current[1] + b * current[3],
-            c * current[0] + d * current[2],
-            c * current[1] + d * current[3],
-            e * current[0] + f * current[2] + current[4],
-            e * current[1] + f * current[3] + current[5]
-          ]
-        }
+  if (keepImages) {
+    console.time('pdf-images')
+    progress?.({ type: 'phase', phase: 'extracting' })
+    try {
+      const imagesResult = await extractImagesWithPages(pdfPath)
+      assetsDir = imagesResult.assetsDir
+      extractedImages = imagesResult.images
 
-        // Detecta operações de imagem
-        if (fn === pdfjsLib.OPS.paintImageXObject ||
-          fn === pdfjsLib.OPS.paintInlineImageXObject ||
-          fn === pdfjsLib.OPS.paintImageMaskXObject) {
+      try {
+        const textPosResult = await extractTextPositionsWithPages(pdfPath)
+        textPositionsByPage = textPosResult.textPositionsByPage
+      } catch (txErr) {
+        console.warn('⚠️ Falha ao extrair posições de texto:', txErr.message)
+      }
+    } catch (err) {
+      console.error('⚠️ Falha ao extrair imagens:', err.message)
+    }
+    console.timeEnd('pdf-images')
+  }
 
-          const imageName = args[0]
+  console.time('split-chapters')
+  let chapters
+  if (fastMode) {
+    chapters = createChaptersWithImagesInOrderExtended(text, extractedImages, pdfData.numpages, true, textPositionsByPage)
+  } else {
+    chapters = await runWithTimeout(
+      Promise.resolve().then(() => createChaptersWithImagesInOrderExtended(text, extractedImages, pdfData.numpages, false, textPositionsByPage)),
+      5000,
+      'split-chapters'
+    )
+  }
+  console.timeEnd('split-chapters')
 
-          try {
-            // Obtém a imagem
-            const image = await page.objs.get(imageName)
+  const epubOptions = {
+    title,
+    author: 'Autor Desconhecido',
+    publisher: 'Conversor PDF-EPUB (Reflow)',
+    cover: coverPath || '',
+    content: chapters,
+    lang: 'pt',
+    version: 3
+  }
 
-            if (!image || !image.width || !image.height) {
-              continue
-            }
+  console.time('epub-gen')
+  try {
+    await runWithTimeout(new Epub(epubOptions, epubPath).promise, fastMode ? 15000 : 30000, 'epub-gen')
+  } catch (err) {
+    const fallbackOptions = {
+      title,
+      author: 'Autor Desconhecido',
+      cover: coverPath || '',
+      content: [{ title: 'Conteúdo', data: `<pre>${escapeHtml(text)}</pre>` }],
+      lang: 'pt'
+    }
+    await runWithTimeout(new Epub(fallbackOptions, epubPath).promise, 15000, 'epub-gen-fallback')
+  }
+  console.timeEnd('epub-gen')
 
-            // Filtra imagens muito pequenas (provavelmente ícones ou artefatos)
-            if (image.width < 32 || image.height < 32) {
-              console.log(`⏭️ Ignorando imagem pequena ${imageName}: ${image.width}x${image.height}`)
-              continue
-            }
+  return { epubPath, assetsDir }
+}
 
-            // Calcula posição real usando a transformação atual
-            const currentTransform = transformStack[transformStack.length - 1]
-            const xPos = currentTransform[4]
-            const yPos = viewport.height - currentTransform[5] // Inverte Y (PDF usa coordenadas de baixo para cima)
+async function extractImagesWithPages(pdfPath) {
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(dataBuffer),
+    useSystemFonts: true,
+    verbosity: 0 // Reduz logs do pdfjs
+  })
+  const pdfDocument = await loadingTask.promise
 
-            // Escala para melhor qualidade (2x)
-            const scale = 2.0
-            const scaledWidth = Math.round(image.width * scale)
-            const scaledHeight = Math.round(image.height * scale)
+  console.log(`📖 PDF carregado: ${pdfDocument.numPages} páginas`)
 
-            // Cria canvas para renderizar a imagem em alta qualidade
-            const canvas = createCanvas(scaledWidth, scaledHeight)
-            const ctx = canvas.getContext('2d', {
-              alpha: true,
-              pixelFormat: 'RGBA32'
-            })
+  // Itera por todas as páginas
+  for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+    const page = await pdfDocument.getPage(pageNum)
+    const viewport = page.getViewport({ scale: 1.0 })
 
-            // Cria ImageData a partir dos dados da imagem
-            if (image.data) {
-              const tempCanvas = createCanvas(image.width, image.height)
-              const tempCtx = tempCanvas.getContext('2d')
-              const imageData = tempCtx.createImageData(image.width, image.height)
+    // Obtém operadores da página para encontrar imagens e suas posições
+    const ops = await page.getOperatorList()
 
-              // Copia os dados da imagem com base no tipo
-              if (image.kind === 1) { // GRAYSCALE_1BPP
-                for (let j = 0; j < image.data.length; j++) {
-                  const idx = j * 4
-                  imageData.data[idx] = image.data[j]     // R
-                  imageData.data[idx + 1] = image.data[j] // G
-                  imageData.data[idx + 2] = image.data[j] // B
-                  imageData.data[idx + 3] = 255           // A
-                }
-              } else if (image.kind === 2) { // RGB_24BPP
-                for (let j = 0, k = 0; j < image.data.length; j += 3, k += 4) {
-                  imageData.data[k] = image.data[j]       // R
-                  imageData.data[k + 1] = image.data[j + 1] // G
-                  imageData.data[k + 2] = image.data[j + 2] // B
-                  imageData.data[k + 3] = 255             // A
-                }
-              } else if (image.kind === 3) { // RGBA_32BPP
-                imageData.data.set(image.data)
-              } else { // Fallback genérico
-                const bytesPerPixel = image.data.length / (image.width * image.height)
-                for (let j = 0, k = 0; j < image.data.length; j += bytesPerPixel, k += 4) {
-                  imageData.data[k] = image.data[j]         // R
-                  imageData.data[k + 1] = image.data[j + 1] || 0 // G
-                  imageData.data[k + 2] = image.data[j + 2] || 0 // B
-                  imageData.data[k + 3] = bytesPerPixel === 4 ? image.data[j + 3] : 255 // A
-                }
-              }
+    // Rastreia transformações para calcular posições reais
+    const transformStack = [[1, 0, 0, 1, 0, 0]] // Matriz identidade inicial
+    let imageIndex = 0
 
-              tempCtx.putImageData(imageData, 0, 0)
+    for (let i = 0; i < ops.fnArray.length; i++) {
+      const fn = ops.fnArray[i]
+      const args = ops.argsArray[i]
 
-              // Redimensiona com qualidade (usando interpolação bicúbica do canvas)
-              ctx.imageSmoothingEnabled = true
-              ctx.imageSmoothingQuality = 'high'
-              ctx.drawImage(tempCanvas, 0, 0, scaledWidth, scaledHeight)
-            }
+      // Rastreia transformações de coordenadas
+      if (fn === pdfjsLib.OPS.save) {
+        transformStack.push([...transformStack[transformStack.length - 1]])
+      } else if (fn === pdfjsLib.OPS.restore) {
+        if (transformStack.length > 1) transformStack.pop()
+      } else if (fn === pdfjsLib.OPS.transform) {
+        const current = transformStack[transformStack.length - 1]
+        const [a, b, c, d, e, f] = args
+        // Multiplica matrizes
+        transformStack[transformStack.length - 1] = [
+          a * current[0] + b * current[2],
+          a * current[1] + b * current[3],
+          c * current[0] + d * current[2],
+          c * current[1] + d * current[3],
+          e * current[0] + f * current[2] + current[4],
+          e * current[1] + f * current[3] + current[5]
+        ]
+      }
 
-            // Salva a imagem como PNG de alta qualidade
-            const imagePath = path.join(tempDir, `img-p${String(pageNum).padStart(4, '0')}-${String(imageIndex).padStart(3, '0')}.png`)
-            const buffer = canvas.toBuffer('image/png', {
-              compressionLevel: 6,  // Balanceio entre qualidade e tamanho
-              filters: canvas.PNG_FILTER_NONE
-            })
-            await fs.promises.writeFile(imagePath, buffer)
+      // Detecta operações de imagem
+      if (fn === pdfjsLib.OPS.paintImageXObject ||
+        fn === pdfjsLib.OPS.paintInlineImageXObject ||
+        fn === pdfjsLib.OPS.paintImageMaskXObject) {
 
-            images.push({
-              path: imagePath,
-              page: pageNum,
-              x: xPos,
-              y: yPos,
-              width: scaledWidth,
-              height: scaledHeight,
-              originalWidth: image.width,
-              originalHeight: image.height
-            })
+        const imageName = args[0]
 
-            console.log(`✅ Pág ${pageNum} - Imagem ${imageIndex}: ${image.width}x${image.height} → ${scaledWidth}x${scaledHeight} @ Y:${yPos.toFixed(0)}`)
-            imageIndex++
-          } catch (imgError) {
-            console.warn(`⚠️ Erro ao extrair imagem ${imageName} da página ${pageNum}:`, imgError.message)
+        try {
+          // Obtém a imagem
+          const image = await page.objs.get(imageName)
+
+          if (!image || !image.width || !image.height) {
+            continue
           }
+
+          // Filtra imagens muito pequenas (provavelmente ícones ou artefatos)
+          if (image.width < 32 || image.height < 32) {
+            console.log(`⏭️ Ignorando imagem pequena ${imageName}: ${image.width}x${image.height}`)
+            continue
+          }
+
+          // Calcula posição real usando a transformação atual
+          const currentTransform = transformStack[transformStack.length - 1]
+          const xPos = currentTransform[4]
+          const yPos = viewport.height - currentTransform[5] // Inverte Y (PDF usa coordenadas de baixo para cima)
+
+          // Escala para melhor qualidade (2x)
+          const scale = 2.0
+          const scaledWidth = Math.round(image.width * scale)
+          const scaledHeight = Math.round(image.height * scale)
+
+          // Cria canvas para renderizar a imagem em alta qualidade
+          const canvas = createCanvas(scaledWidth, scaledHeight)
+          const ctx = canvas.getContext('2d', {
+            alpha: true,
+            pixelFormat: 'RGBA32'
+          })
+
+          // Cria ImageData a partir dos dados da imagem
+          if (image.data) {
+            const tempCanvas = createCanvas(image.width, image.height)
+            const tempCtx = tempCanvas.getContext('2d')
+            const imageData = tempCtx.createImageData(image.width, image.height)
+
+            // Copia os dados da imagem com base no tipo
+            if (image.kind === 1) { // GRAYSCALE_1BPP
+              for (let j = 0; j < image.data.length; j++) {
+                const idx = j * 4
+                imageData.data[idx] = image.data[j]     // R
+                imageData.data[idx + 1] = image.data[j] // G
+                imageData.data[idx + 2] = image.data[j] // B
+                imageData.data[idx + 3] = 255           // A
+              }
+            } else if (image.kind === 2) { // RGB_24BPP
+              for (let j = 0, k = 0; j < image.data.length; j += 3, k += 4) {
+                imageData.data[k] = image.data[j]       // R
+                imageData.data[k + 1] = image.data[j + 1] // G
+                imageData.data[k + 2] = image.data[j + 2] // B
+                imageData.data[k + 3] = 255             // A
+              }
+            } else if (image.kind === 3) { // RGBA_32BPP
+              imageData.data.set(image.data)
+            } else { // Fallback genérico
+              const bytesPerPixel = image.data.length / (image.width * image.height)
+              for (let j = 0, k = 0; j < image.data.length; j += bytesPerPixel, k += 4) {
+                imageData.data[k] = image.data[j]         // R
+                imageData.data[k + 1] = image.data[j + 1] || 0 // G
+                imageData.data[k + 2] = image.data[j + 2] || 0 // B
+                imageData.data[k + 3] = bytesPerPixel === 4 ? image.data[j + 3] : 255 // A
+              }
+            }
+
+            tempCtx.putImageData(imageData, 0, 0)
+
+            // Redimensiona com qualidade (usando interpolação bicúbica do canvas)
+            ctx.imageSmoothingEnabled = true
+            ctx.imageSmoothingQuality = 'high'
+            ctx.drawImage(tempCanvas, 0, 0, scaledWidth, scaledHeight)
+          }
+
+          // Salva a imagem como PNG de alta qualidade
+          const imagePath = path.join(tempDir, `img-p${String(pageNum).padStart(4, '0')}-${String(imageIndex).padStart(3, '0')}.png`)
+          const buffer = canvas.toBuffer('image/png', {
+            compressionLevel: 6,  // Balanceio entre qualidade e tamanho
+            filters: canvas.PNG_FILTER_NONE
+          })
+          await fs.promises.writeFile(imagePath, buffer)
+
+          images.push({
+            path: imagePath,
+            page: pageNum,
+            x: xPos,
+            y: yPos,
+            width: scaledWidth,
+            height: scaledHeight,
+            originalWidth: image.width,
+            originalHeight: image.height
+          })
+
+          console.log(`✅ Pág ${pageNum} - Imagem ${imageIndex}: ${image.width}x${image.height} → ${scaledWidth}x${scaledHeight} @ Y:${yPos.toFixed(0)}`)
+          imageIndex++
+        } catch (imgError) {
+          console.warn(`⚠️ Erro ao extrair imagem ${imageName} da página ${pageNum}:`, imgError.message)
         }
       }
     }
-
-    console.log(`📊 Total de imagens extraídas com PDF.js: ${images.length}`)
-    if (images.length > 0) {
-      console.log('📍 Posições:', images.map(img => `Pág ${img.page} Y:${img.y.toFixed(0)}`).join(' | '))
-    }
-    return { assetsDir: tempDir, images }
-  } catch (error) {
-    console.error('❌ Erro ao extrair imagens com PDF.js:', error)
-    throw error
   }
+
+  console.log(`📊 Total de imagens extraídas com PDF.js: ${images.length}`)
+  if (images.length > 0) {
+    console.log('📍 Posições:', images.map(img => `Pág ${img.page} Y:${img.y.toFixed(0)}`).join(' | '))
+  }
+  return { assetsDir: tempDir, images }
+} catch (error) {
+  console.error('❌ Erro ao extrair imagens com PDF.js:', error)
+  throw error
+}
 }
 
 function createChaptersWithImagesInOrderExtended(text, images, totalPages, fastMode, textPositionsByPage) {

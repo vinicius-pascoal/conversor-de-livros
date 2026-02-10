@@ -5,7 +5,10 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import pdfParse from 'pdf-parse'
 import Epub from 'epub-gen'
-import { translateTextWithProgress, detectLanguage } from './translator.js'
+import { translateText, translateTextWithProgress, detectLanguage } from './translator.js'
+import { renderPdfPagesToSvg } from './pdfRenderer.js'
+import { generateFixedLayoutEpub } from './fixedLayoutEpub.js'
+import { analyzePdfLayout, reconstructChapters } from './layoutAnalyzer.js'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { createCanvas } from 'canvas'
 
@@ -28,15 +31,17 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     let coverPath = options.coverPath || null
     const keepImages = options.keepImages !== false
     const translateToPt = options.translate === true
+    let useFixedLayout = options.useFixedLayout !== false // Agora Fixed Layout é padrão
     const progress = typeof options.progress === 'function' ? options.progress : null
-    console.log('🔄 Iniciando conversão...')
+
+    console.log('🔄 Iniciando conversão com Fixed Layout EPUB...')
     console.log('⚡ fastMode:', fastMode)
-    console.log('🖼️ keepImages:', keepImages)
+    console.log('🖼️ useFixedLayout:', useFixedLayout)
     console.log('🌐 translate:', translateToPt)
     console.time('pdf-total')
     progress?.({ type: 'log', message: 'Iniciando conversão' })
 
-    // Ler o PDF
+    // Lê metadados básicos do PDF
     console.time('pdf-read')
     const dataBuffer = await fs.promises.readFile(pdfPath)
     progress?.({ type: 'log', message: 'PDF carregado em memória' })
@@ -52,139 +57,446 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     console.log('📝 Texto extraído:', pdfData.text.length, 'caracteres')
 
     if (!pdfData.text || pdfData.text.trim().length === 0) {
-      throw new Error('Nenhum texto extraído do PDF (pode ser digitalizado sem OCR)')
+      console.warn('⚠️ Pouco ou nenhum texto extraído - PDF pode ser digitalizado')
     }
 
-    // Limita tamanho para evitar lentidão extrema em PDFs gigantes
-    const MAX_CHARS = 800_000
-    let text = pdfData.text.length > MAX_CHARS
-      ? pdfData.text.slice(0, MAX_CHARS)
-      : pdfData.text
+    // Extrair título do nome do arquivo
+    const title = originalFilename.replace('.pdf', '') || 'Documento Convertido'
 
-    // Traduzir texto se solicitado
-    if (translateToPt) {
-      console.time('translation')
+    let text = pdfData.text
+
+    // Detecta idioma antes (não traduz ainda - será feito nos capítulos reconstruídos)
+    let detectedLang = 'unknown'
+    if (translateToPt && text && text.trim().length > 0) {
       progress?.({ type: 'phase', phase: 'translating' })
       progress?.({ type: 'log', message: 'Detectando idioma...' })
 
-      const detectedLang = await detectLanguage(text)
+      detectedLang = await detectLanguage(text)
       console.log('🌍 Idioma detectado:', detectedLang)
       progress?.({ type: 'log', message: `Idioma detectado: ${detectedLang}` })
 
-      if (detectedLang !== 'pt' && detectedLang !== 'unknown') {
-        progress?.({ type: 'log', message: 'Traduzindo para português...' })
-        text = await translateTextWithProgress(text, progress)
-        console.log('✅ Texto traduzido para pt-br')
-        progress?.({ type: 'log', message: 'Tradução concluída!' })
-      } else {
+      if (detectedLang === 'pt') {
         console.log('ℹ️ Texto já está em português, pulando tradução')
         progress?.({ type: 'log', message: 'Texto já está em português' })
       }
-      console.timeEnd('translation')
     }
 
-    // Extrair título do nome do arquivo ou usar texto
-    const title = originalFilename.replace('.pdf', '') || 'Documento Convertido'
+    if (translateToPt && useFixedLayout) {
+      console.warn('⚠️ Tradução visível requer modo reflow; desabilitando Fixed Layout')
+      progress?.({ type: 'log', message: 'Tradução visível requer Reflow; usando Reflow.' })
+      useFixedLayout = false
+    }
 
-    // Extrair imagens do PDF (opcional) com informação de página
-    let assetsDir = null
-    let extractedImages = []
-    let textPositionsByPage = new Map()
-    if (keepImages) {
-      console.time('pdf-images')
+    // NOVA ABORDAGEM: Fixed Layout EPUB
+    if (useFixedLayout) {
+      console.log('🎨 Renderizando páginas em alta qualidade para Fixed Layout...')
       progress?.({ type: 'phase', phase: 'extracting' })
-      try {
-        const imagesResult = await extractImagesWithPages(pdfPath)
-        assetsDir = imagesResult.assetsDir
-        extractedImages = imagesResult.images
-        console.log('🖼️ Imagens extraídas:', extractedImages.length)
-        progress?.({ type: 'log', message: `Imagens extraídas: ${extractedImages.length}` })
-        if (!coverPath && extractedImages.length > 0) {
-          coverPath = extractedImages[0].path
-          console.log('📔 Capa definida pela primeira imagem extraída')
-          progress?.({ type: 'log', message: 'Capa definida pela primeira imagem' })
+      progress?.({ type: 'log', message: 'Renderizando páginas do PDF...' })
+
+      console.time('render-pages')
+      const renderResult = await renderPdfPagesToSvg(pdfPath, {
+        scale: 2.0,
+        progress: (msg) => {
+          console.log(msg)
+          progress?.({ type: 'log', message: msg })
         }
-        // Extração adicional: posições de texto por página para validação de ordem
-        try {
-          const textPosResult = await extractTextPositionsWithPages(pdfPath)
-          textPositionsByPage = textPosResult.textPositionsByPage
-          console.log('📝 Posições de texto extraídas para', textPositionsByPage.size, 'páginas')
-        } catch (txErr) {
-          console.warn('⚠️ Falha ao extrair posições de texto:', txErr.message)
-        }
-      } catch (err) {
-        console.error('⚠️ Falha ao extrair imagens:', err.message)
-        progress?.({ type: 'log', message: `Falha ao extrair imagens: ${err.message}` })
+      })
+      console.timeEnd('render-pages')
+
+      const { pages, assetsDir } = renderResult
+      console.log(`✅ ${pages.length} páginas renderizadas`)
+
+      // Define capa como primeira página se não fornecida
+      if (!coverPath && pages.length > 0) {
+        coverPath = pages[0].imagePath
+        console.log('📔 Capa definida pela primeira página')
       }
-      console.timeEnd('pdf-images')
-    }
 
-    // Criar capítulos com texto e imagens na ordem exata do PDF
-    console.time('split-chapters')
-    let chapters
-    if (fastMode) {
-      // Modo rápido: um capítulo único com imagens inseridas em ordem
-      progress?.({ type: 'phase', phase: 'processing' })
-      chapters = createChaptersWithImagesInOrderExtended(text, extractedImages, pdfData.numpages, true, textPositionsByPage)
-      console.timeEnd('split-chapters')
-    } else {
-      progress?.({ type: 'phase', phase: 'processing' })
-      chapters = await runWithTimeout(
-        Promise.resolve().then(() => createChaptersWithImagesInOrderExtended(text, extractedImages, pdfData.numpages, false, textPositionsByPage)),
-        5000,
-        'split-chapters'
-      )
-      console.timeEnd('split-chapters')
-    }
+      console.log('📚 Gerando EPUB Fixed Layout...')
+      progress?.({ type: 'phase', phase: 'generating' })
+      progress?.({ type: 'log', message: 'Montando estrutura EPUB...' })
 
-    // Configuração do EPUB
-    const epubOptions = {
-      title: title,
-      author: 'Autor Desconhecido',
-      publisher: 'Conversor PDF-EPUB',
-      cover: coverPath || '',
-      content: chapters,
-      lang: 'pt',
-      tocTitle: 'Índice',
-      appendChapterTitles: true,
-      customOpfTemplatePath: null,
-      customNcxTocTemplatePath: null,
-      customHtmlTocTemplatePath: null,
-      version: 3
-    }
-
-    console.log('📚 Gerando EPUB...')
-    progress?.({ type: 'phase', phase: 'generating' })
-    console.time('epub-gen')
-
-    try {
-      // Gerar o EPUB
-      await runWithTimeout(new Epub(epubOptions, epubPath).promise, fastMode ? 15000 : 30000, 'epub-gen')
-    } catch (err) {
-      console.error('⚠️ epub-gen falhou, tentando modo simplificado:', err.message)
-      // fallback simples: um capítulo único com o texto plano para não travar
-      const fallbackOptions = {
-        title: title,
+      console.time('epub-gen')
+      await generateFixedLayoutEpub({
+        title,
         author: 'Autor Desconhecido',
-        cover: coverPath || '',
-        content: [{ title: 'Conteúdo', data: `<pre>${escapeHtml(text)}</pre>` }],
-        lang: 'pt'
-      }
-      await runWithTimeout(new Epub(fallbackOptions, epubPath).promise, 15000, 'epub-gen-fallback')
+        publisher: 'Conversor PDF-EPUB (Fixed Layout)',
+        language: 'pt',
+        pages: pages,
+        coverImagePath: coverPath
+      }, epubPath)
+      console.timeEnd('epub-gen')
+
+      console.timeEnd('pdf-total')
+      console.log('✨ EPUB Fixed Layout gerado com sucesso!')
+      progress?.({ type: 'phase', phase: 'complete' })
+      progress?.({ type: 'log', message: 'Conversão concluída!' })
+
+      return { epubPath, assetsDir }
     }
 
-    console.timeEnd('epub-gen')
-    console.timeEnd('pdf-total')
-    console.log('✨ EPUB gerado com sucesso!')
-    progress?.({ type: 'phase', phase: 'complete' })
-    progress?.({ type: 'log', message: 'EPUB gerado com sucesso' })
+    // MODO REFLOW COM RECONSTRUÇÃO INTELIGENTE DE LAYOUT
+    console.log('📐 Usando modo Reflow com reconstrução inteligente de layout')
+    progress?.({ type: 'log', message: 'Analisando estrutura do PDF...' })
 
-    return { epubPath, assetsDir }
+    return await convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilename, {
+      ...options,
+      text,
+      pdfData,
+      title,
+      coverPath,
+      progress,
+      dataBuffer,
+      detectedLang,
+      translateToPt // Passa explicitamente
+    })
 
   } catch (error) {
     console.error('Erro na conversão:', error)
     throw new Error(`Falha ao converter PDF para EPUB: ${error.message}`)
   }
+}
+
+// ========== MODO REFLOW COM RECONSTRUÇÃO INTELIGENTE ==========
+
+/**
+ * Integra imagens extraídas nos capítulos baseado nas páginas
+ */
+function integrateImagesIntoChapters(chapters, images, pageLayouts) {
+  if (!images || images.length === 0) return chapters
+
+  // Cria mapa de imagens por página
+  const imagesByPage = new Map()
+  for (const img of images) {
+    if (!imagesByPage.has(img.page)) {
+      imagesByPage.set(img.page, [])
+    }
+    imagesByPage.get(img.page).push(img)
+  }
+
+  // Ordena imagens por posição Y em cada página (top to bottom)
+  for (const [page, imgs] of imagesByPage.entries()) {
+    imgs.sort((a, b) => b.y - a.y) // Y maior = topo da página
+  }
+
+  // Para cada capítulo, identifica quais páginas ele contém e insere imagens
+  const updatedChapters = chapters.map(chapter => {
+    // Capítulos reconstruídos geralmente contêm blocos de múltiplas páginas
+    // Vamos inserir imagens no final de cada capítulo por enquanto
+    // (uma abordagem mais sofisticada exigiria mapear blocos específicos a páginas)
+
+    let chapterHtml = chapter.data
+
+    // Identifica quais páginas têm conteúdo neste capítulo
+    // Como não temos mapeamento direto, vamos distribuir imagens proporcionalmente
+    const chapterIndex = chapters.indexOf(chapter)
+    const totalPages = pageLayouts.length
+    const pagesPerChapter = Math.ceil(totalPages / chapters.length)
+    const startPage = chapterIndex * pagesPerChapter + 1
+    const endPage = Math.min(startPage + pagesPerChapter - 1, totalPages)
+
+    // Coleta imagens dessas páginas
+    const chapterImages = []
+    for (let page = startPage; page <= endPage; page++) {
+      if (imagesByPage.has(page)) {
+        chapterImages.push(...imagesByPage.get(page))
+      }
+    }
+
+    // Insere imagens no HTML (ao final de cada seção ou distribuídas)
+    if (chapterImages.length > 0) {
+      // Remove tag de fechamento do div se existir
+      chapterHtml = chapterHtml.replace(/<\/div>\s*$/, '')
+
+      // Adiciona imagens (usa caminho completo para epub-gen processar)
+      for (const img of chapterImages) {
+        const imgTag = `<figure class="epub-image">
+  <img src="${img.path}" alt="Imagem da página ${img.page}" style="max-width: 100%; height: auto;"/>
+  <figcaption>Página ${img.page}</figcaption>
+</figure>\n`
+        chapterHtml += imgTag
+      }
+
+      // Fecha div novamente
+      chapterHtml += '</div>'
+    }
+
+    return {
+      ...chapter,
+      data: chapterHtml
+    }
+  })
+
+  return updatedChapters
+}
+
+async function convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilename, options) {
+  const { fastMode, text, pdfData, title, coverPath, progress, translateToPt, dataBuffer, detectedLang, keepImages } = options
+
+  console.time('layout-analysis')
+  progress?.({ type: 'phase', phase: 'extracting' })
+  progress?.({ type: 'log', message: 'Analisando estrutura de layout do PDF...' })
+
+  // Analisa layout do PDF
+  const layoutAnalysis = await analyzePdfLayout(dataBuffer)
+  console.log(`📐 Layout analisado: ${layoutAnalysis.totalPages} páginas`)
+  progress?.({ type: 'log', message: `${layoutAnalysis.totalPages} páginas analisadas` })
+  console.timeEnd('layout-analysis')
+
+  // Extrai imagens do PDF se solicitado
+  let extractedImages = []
+  if (keepImages !== false) {
+    console.time('extract-images')
+    progress?.({ type: 'log', message: 'Extraindo imagens do PDF...' })
+
+    try {
+      const imagesResult = await extractImagesWithPages(pdfPath)
+      extractedImages = imagesResult.images
+      console.log(`🖼️ ${extractedImages.length} imagens extraídas`)
+      progress?.({ type: 'log', message: `${extractedImages.length} imagens extraídas` })
+    } catch (err) {
+      console.warn('⚠️ Falha ao extrair imagens:', err.message)
+      progress?.({ type: 'log', message: `Aviso: não foi possível extrair imagens` })
+    }
+    console.timeEnd('extract-images')
+  }
+
+  // Reconstrói capítulos a partir da análise
+  console.time('reconstruct-chapters')
+  progress?.({ type: 'phase', phase: 'processing' })
+  progress?.({ type: 'log', message: 'Reconstruindo estrutura de capítulos...' })
+
+  let chapters = reconstructChapters(layoutAnalysis.pages, {
+    preserveFormatting: true,
+    addSeparators: true,
+    includeHeaderFooter: false
+  })
+  console.log(`📚 ${chapters.length} capítulos reconstruídos`)
+  progress?.({ type: 'log', message: `${chapters.length} seções identificadas` })
+  console.timeEnd('reconstruct-chapters')
+
+  // Adiciona imagens nos capítulos baseado nas páginas
+  if (extractedImages.length > 0) {
+    chapters = integrateImagesIntoChapters(chapters, extractedImages, layoutAnalysis.pages)
+    console.log(`✅ Imagens integradas nos capítulos`)
+    progress?.({ type: 'log', message: `Imagens integradas aos capítulos` })
+  }
+
+  // Traduz conteúdo dos capítulos se solicitado
+  console.log('🔍 [DEBUG] translateToPt =', translateToPt, ', detectedLang =', detectedLang)
+  if (translateToPt && detectedLang !== 'pt' && detectedLang !== 'unknown') {
+    console.time('translation')
+    progress?.({ type: 'phase', phase: 'translating' })
+    progress?.({ type: 'log', message: `Traduzindo de ${detectedLang} para pt-br...` })
+
+    // Traduz cada capítulo mantendo estrutura HTML e imagens
+    for (let i = 0; i < chapters.length; i++) {
+      const chapter = chapters[i]
+      const chapterNum = i + 1
+      const totalChapters = chapters.length
+
+      progress?.({ type: 'log', message: `Traduzindo ${chapterNum}/${totalChapters} (${Math.round(chapterNum / totalChapters * 100)}%)` })
+
+      // Extrai apenas texto (preservando tags de imagem)
+      const imgTags = []
+      let dataWithPlaceholders = chapter.data.replace(/<img[^>]+>/g, (match) => {
+        const placeholder = `___IMG_${imgTags.length}___`
+        imgTags.push(match)
+        return placeholder
+      })
+
+      // Remove outras tags HTML para tradução
+      const textOnly = dataWithPlaceholders.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+
+      if (textOnly.length > 50) {
+        // Traduz o texto
+        const translated = await translateText(textOnly)
+
+        // Reconstrói HTML com texto traduzido
+        let translatedHtml = `<div class="chapter">`
+        const paragraphs = translated.split(/\.\s+/).filter(p => p.trim().length > 0)
+
+        for (const para of paragraphs) {
+          translatedHtml += `<p>${para.trim()}${para.trim().endsWith('.') ? '' : '.'}</p>\n`
+        }
+
+        translatedHtml += `</div>`
+
+        // Restaura as imagens
+        imgTags.forEach((imgTag, idx) => {
+          const placeholder = `___IMG_${idx}___`
+          translatedHtml = translatedHtml.replace(placeholder, imgTag)
+        })
+
+        chapter.data = translatedHtml
+      }
+    }
+
+    console.log('✅ Capítulos traduzidos')
+    progress?.({ type: 'log', message: 'Tradução concluída!' })
+    console.timeEnd('translation')
+  }
+
+  // Gera EPUB com estrutura reconstruída
+  console.log(`📊 Preparando EPUB: ${chapters.length} capítulos, ${extractedImages.length} imagens`)
+
+  // Verifica se há imagens nos capítulos
+  const totalImagesInChapters = chapters.reduce((count, ch) => {
+    const matches = ch.data.match(/<img[^>]+>/g)
+    return count + (matches ? matches.length : 0)
+  }, 0)
+  console.log(`🖼️ Total de tags <img> encontradas nos capítulos: ${totalImagesInChapters}`)
+
+  // Debug: mostra preview do primeiro capítulo
+  if (chapters.length > 0) {
+    const preview = chapters[0].data.substring(0, 500)
+    console.log(`📄 Preview do capítulo 1 (primeiros 500 chars):`)
+    console.log(preview)
+  }
+
+  const epubOptions = {
+    title,
+    author: 'Autor Desconhecido',
+    publisher: 'Conversor PDF-EPUB (Reflow Inteligente)',
+    cover: coverPath || '',
+    content: chapters,
+    lang: 'pt',
+    tocTitle: 'Índice',
+    appendChapterTitles: true,
+    version: 3,
+    css: `
+      body { font-family: serif; line-height: 1.6; margin: 1em; }
+      h1 { font-size: 1.8em; margin-top: 1em; margin-bottom: 0.5em; page-break-before: always; }
+      h2 { font-size: 1.5em; margin-top: 0.8em; margin-bottom: 0.4em; }
+      h3 { font-size: 1.2em; margin-top: 0.6em; margin-bottom: 0.3em; }
+      p { text-align: justify; margin: 0.5em 0; }
+      .caption { font-style: italic; font-size: 0.9em; text-align: center; }
+      hr { border: 0; border-top: 1px solid #ccc; margin: 1em 0; }
+      figure.epub-image { margin: 1em 0; text-align: center; page-break-inside: avoid; }
+      figure.epub-image img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+      figcaption { font-size: 0.85em; color: #666; margin-top: 0.5em; font-style: italic; }
+    `
+  }
+
+  console.log('📚 Gerando EPUB Reflow otimizado...')
+  progress?.({ type: 'phase', phase: 'generating' })
+  console.time('epub-gen')
+
+  try {
+    await runWithTimeout(
+      new Epub(epubOptions, epubPath).promise,
+      fastMode ? 15000 : 30000,
+      'epub-gen'
+    )
+  } catch (err) {
+    console.error('⚠️ Erro ao gerar EPUB, tentando modo simplificado:', err.message)
+    const fallbackOptions = {
+      title,
+      author: 'Autor Desconhecido',
+      cover: coverPath || '',
+      content: chapters.slice(0, 1), // Apenas primeiro capítulo
+      lang: 'pt'
+    }
+    await runWithTimeout(
+      new Epub(fallbackOptions, epubPath).promise,
+      15000,
+      'epub-gen-fallback'
+    )
+  }
+
+  console.timeEnd('epub-gen')
+  console.log('✨ EPUB Reflow com layout inteligente gerado!')
+  progress?.({ type: 'phase', phase: 'complete' })
+
+  return { epubPath }
+}
+
+// ========== MODO LEGADO (FALLBACK) ==========
+// Mantido para compatibilidade, mas não é mais usado por padrão
+
+async function convertPdfToEpubLegacy(pdfPath, epubPath, originalFilename, options) {
+  const { fastMode, keepImages, text, pdfData, title, coverPath, progress } = options
+
+  // Extrair imagens do PDF (opcional) com informação de página
+  let assetsDir = null
+  let extractedImages = []
+  let textPositionsByPage = new Map()
+  if (keepImages) {
+    console.time('pdf-images')
+    progress?.({ type: 'phase', phase: 'extracting' })
+    try {
+      const imagesResult = await extractImagesWithPages(pdfPath)
+      assetsDir = imagesResult.assetsDir
+      extractedImages = imagesResult.images
+      console.log('🖼️ Imagens extraídas:', extractedImages.length)
+      progress?.({ type: 'log', message: `Imagens extraídas: ${extractedImages.length}` })
+
+      try {
+        const textPosResult = await extractTextPositionsWithPages(pdfPath)
+        textPositionsByPage = textPosResult.textPositionsByPage
+      } catch (txErr) {
+        console.warn('⚠️ Falha ao extrair posições de texto:', txErr.message)
+      }
+    } catch (err) {
+      console.error('⚠️ Falha ao extrair imagens:', err.message)
+      progress?.({ type: 'log', message: `Falha ao extrair imagens: ${err.message}` })
+    }
+    console.timeEnd('pdf-images')
+  }
+
+  // Criar capítulos com texto e imagens
+  console.time('split-chapters')
+  let chapters
+  if (fastMode) {
+    progress?.({ type: 'phase', phase: 'processing' })
+    chapters = createChaptersWithImagesInOrderExtended(text, extractedImages, pdfData.numpages, true, textPositionsByPage)
+    console.timeEnd('split-chapters')
+  } else {
+    progress?.({ type: 'phase', phase: 'processing' })
+    chapters = await runWithTimeout(
+      Promise.resolve().then(() => createChaptersWithImagesInOrderExtended(text, extractedImages, pdfData.numpages, false, textPositionsByPage)),
+      5000,
+      'split-chapters'
+    )
+    console.timeEnd('split-chapters')
+  }
+
+  // Configuração do EPUB
+  const epubOptions = {
+    title: title,
+    author: 'Autor Desconhecido',
+    publisher: 'Conversor PDF-EPUB (Reflow)',
+    cover: coverPath || '',
+    content: chapters,
+    lang: 'pt',
+    tocTitle: 'Índice',
+    appendChapterTitles: true,
+    version: 3
+  }
+
+  console.log('📚 Gerando EPUB (modo reflow)...')
+  progress?.({ type: 'phase', phase: 'generating' })
+  console.time('epub-gen')
+
+  try {
+    await runWithTimeout(new Epub(epubOptions, epubPath).promise, fastMode ? 15000 : 30000, 'epub-gen')
+  } catch (err) {
+    console.error('⚠️ epub-gen falhou, tentando modo simplificado:', err.message)
+    const fallbackOptions = {
+      title: title,
+      author: 'Autor Desconhecido',
+      cover: coverPath || '',
+      content: [{ title: 'Conteúdo', data: `<pre>${escapeHtml(text)}</pre>` }],
+      lang: 'pt'
+    }
+    await runWithTimeout(new Epub(fallbackOptions, epubPath).promise, 15000, 'epub-gen-fallback')
+  }
+
+  console.timeEnd('epub-gen')
+  console.log('✨ EPUB (reflow) gerado com sucesso!')
+  progress?.({ type: 'phase', phase: 'complete' })
+
+  return { epubPath, assetsDir }
 }
 
 async function extractImagesWithPages(pdfPath) {

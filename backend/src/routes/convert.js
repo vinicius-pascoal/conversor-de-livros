@@ -68,6 +68,13 @@ const upload = multer({
  *         schema:
  *           type: boolean
  *           default: false
+ *       - name: useFixedLayout
+ *         in: query
+ *         description: Usar Fixed Layout EPUB (preserva layout original) ou Reflow (texto fluido)
+ *         required: false
+ *         schema:
+ *           type: boolean
+ *           default: true
  *       - name: jobId
  *         in: query
  *         description: ID único da tarefa para rastreamento de progresso (SSE)
@@ -158,9 +165,12 @@ router.post('/convert', (req, res, next) => {
     const translate = req.query.translate
       ? ['true', '1', 'yes', 'on'].includes(String(req.query.translate).toLowerCase())
       : false
+    const useFixedLayout = req.query.useFixedLayout
+      ? ['true', '1', 'yes', 'on'].includes(String(req.query.useFixedLayout).toLowerCase())
+      : true // Fixed Layout é padrão
 
     console.log('📄 [CONVERT] Arquivo recebido:', pdfFile.originalname, 'tamanho:', pdfFile.size, 'bytes')
-    console.log('📄 [CONVERT] Configuração: fastMode=%s, keepImages=%s, translate=%s', fastMode, keepImages, translate)
+    console.log('📄 [CONVERT] Configuração: fastMode=%s, keepImages=%s, translate=%s, useFixedLayout=%s', fastMode, keepImages, translate, useFixedLayout)
     if (jobId) {
       console.log('📡 [CONVERT] Emitindo progresso para jobId:', jobId)
       emitProgress(jobId, { type: 'log', message: `Arquivo recebido: ${pdfFile.originalname}` })
@@ -182,6 +192,7 @@ router.post('/convert', (req, res, next) => {
       coverPath,
       keepImages,
       translate,
+      useFixedLayout,
       progress: jobId ? (evt) => emitProgress(jobId, evt) : null
     })
     console.log('⬅️ Retorno convertPdfToEpub')
