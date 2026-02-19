@@ -4,6 +4,9 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { convertPdfToEpub } from '../services/converter.js'
+import { generatePdf } from '../services/pdfGenerator.js'
+import { translateTextWithProgress, detectLanguage } from '../services/translator.js'
+import pdfParse from 'pdf-parse'
 import { emitProgress, completeProgress } from '../services/progress.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -156,6 +159,7 @@ router.post('/convert', (req, res, next) => {
 
     const jobId = req.query.jobId ? String(req.query.jobId) : null
     console.log('🟡 [CONVERT] jobId:', jobId)
+    const outputFormat = req.query.outputFormat || 'epub' // 'epub' | 'pdf'
     const fastMode = req.query.mode
       ? req.query.mode === 'fast'
       : (process.env.FAST_MODE_DEFAULT === 'true')
@@ -173,7 +177,7 @@ router.post('/convert', (req, res, next) => {
       : true // Fixed Layout é padrão
 
     console.log('📄 [CONVERT] Arquivo recebido:', pdfFile.originalname, 'tamanho:', pdfFile.size, 'bytes')
-    console.log('📄 [CONVERT] Configuração: fastMode=%s, keepImages=%s, extractImages=%s, translate=%s, useFixedLayout=%s', fastMode, keepImages, extractImages, translate, useFixedLayout)
+    console.log('📄 [CONVERT] Configuração: outputFormat=%s, fastMode=%s, keepImages=%s, extractImages=%s, translate=%s, useFixedLayout=%s', outputFormat, fastMode, keepImages, extractImages, translate, useFixedLayout)
     if (jobId) {
       console.log('📡 [CONVERT] Emitindo progresso para jobId:', jobId)
       emitProgress(jobId, { type: 'log', message: `Arquivo recebido: ${pdfFile.originalname}` })
@@ -183,9 +187,76 @@ router.post('/convert', (req, res, next) => {
     if (jobId) emitProgress(jobId, { type: 'phase', phase: 'extracting' })
 
     const pdfPath = pdfFile.path
-    const epubPath = pdfPath.replace('.pdf', '.epub')
     const coverPath = coverFile ? coverFile.path : null
-    console.log('📂 [CONVERT] Caminhos: pdf=%s, epub=%s, cover=%s', pdfPath, epubPath, coverPath)
+    console.log('📂 [CONVERT] Caminhos: pdf=%s, cover=%s', pdfPath, coverPath)
+
+    // ── Fluxo: PDF Traduzido ──────────────────────────────────────────────────
+    if (outputFormat === 'pdf') {
+      const outputPdfPath = pdfPath.replace(/(\.pdf)?$/, '_traduzido.pdf')
+      const title = pdfFile.originalname.replace('.pdf', '')
+      const progressFn = jobId ? (evt) => emitProgress(jobId, evt) : null
+
+      console.log('🔄 [CONVERT] Iniciando fluxo PDF traduzido')
+
+      // 1. Extrair texto
+      progressFn?.({ type: 'log', message: 'Extraindo texto do PDF...' })
+      const dataBuffer = await fs.promises.readFile(pdfPath)
+      const pdfData = await pdfParse(dataBuffer)
+      let text = pdfData.text || ''
+
+      if (!text.trim()) {
+        return res.status(400).json({ error: 'Nenhum texto foi encontrado no PDF. O arquivo pode ser digitalizado (imagem).' })
+      }
+
+      progressFn?.({ type: 'log', message: `Texto extraído: ${text.length} caracteres` })
+      if (jobId) emitProgress(jobId, { type: 'phase', phase: 'processing' })
+
+      // 2. Traduzir
+      progressFn?.({ type: 'log', message: 'Iniciando tradução...' })
+      const detectedLang = await detectLanguage(text)
+      console.log('🌍 Idioma detectado:', detectedLang)
+
+      if (detectedLang !== 'pt') {
+        text = await translateTextWithProgress(text, progressFn)
+      } else {
+        progressFn?.({ type: 'log', message: 'Texto já está em português, pulando tradução' })
+      }
+
+      if (jobId) emitProgress(jobId, { type: 'phase', phase: 'generating' })
+
+      // 3. Gerar PDF
+      await generatePdf({
+        text,
+        title,
+        outputPath: outputPdfPath,
+        coverPath,
+        progress: progressFn
+      })
+
+      console.log('✅ PDF traduzido gerado:', outputPdfPath)
+
+      const downloadName = pdfFile.originalname.replace('.pdf', '') + '_pt-br.pdf'
+      res.download(outputPdfPath, downloadName, (err) => {
+        fs.unlink(pdfPath, () => { })
+        fs.unlink(outputPdfPath, () => { })
+        if (coverPath) fs.unlink(coverPath, () => { })
+
+        if (err) {
+          console.error('❌ [CONVERT] Erro ao enviar PDF traduzido:', err)
+        } else {
+          console.log('✅ [CONVERT] Download PDF traduzido concluído')
+          if (jobId) {
+            emitProgress(jobId, { type: 'done' })
+            completeProgress(jobId)
+          }
+        }
+      })
+
+      return
+    }
+
+    // ── Fluxo: EPUB (padrão) ─────────────────────────────────────────────────
+    const epubPath = pdfPath.replace('.pdf', '.epub')
 
     // Converter PDF para EPUB
     console.time('convert-route')
