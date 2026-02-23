@@ -142,8 +142,8 @@ function groupTextIntoBlocks(textItems, columns) {
       item.x >= column.xStart && item.x < column.xEnd
     )
 
-    // Ordena por Y (top to bottom) - Y maior = mais acima, então decrescente
-    columnItems.sort((a, b) => b.y - a.y)
+    // Ordena por Y (top to bottom) - Y menor = topo (após inversão), então crescente
+    columnItems.sort((a, b) => a.y - b.y)
 
     // Agrupa linhas próximas em blocos
     let currentBlock = {
@@ -259,8 +259,8 @@ function orderBlocksForReading(blocks, columns) {
     if (aCol !== bCol) return aCol - bCol
 
     // Mesma coluna: ordena por Y (top to bottom)
-    // Y maior = mais acima, então ordena decrescente para ler de cima para baixo
-    return b.yStart - a.yStart
+    // Y menor = topo (após inversão), então ordena crescente para ler de cima para baixo
+    return a.yStart - b.yStart
   })
 
   return contentBlocks
