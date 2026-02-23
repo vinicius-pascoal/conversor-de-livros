@@ -5,6 +5,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { convertPdfToEpub } from '../services/converter.js'
 import { generatePdf } from '../services/pdfGenerator.js'
+import { generatePdfWithLayout } from '../services/pdfGeneratorWithLayout.js'
 import { translateTextWithProgress, detectLanguage } from '../services/translator.js'
 import pdfParse from 'pdf-parse'
 import { emitProgress, completeProgress } from '../services/progress.js'
@@ -196,40 +197,36 @@ router.post('/convert', (req, res, next) => {
       const title = pdfFile.originalname.replace('.pdf', '')
       const progressFn = jobId ? (evt) => emitProgress(jobId, evt) : null
 
-      console.log('🔄 [CONVERT] Iniciando fluxo PDF traduzido')
+      console.log('🔄 [CONVERT] Iniciando fluxo PDF traduzido com preservação de layout e imagens')
 
-      // 1. Extrair texto
-      progressFn?.({ type: 'log', message: 'Extraindo texto do PDF...' })
+      // Detecta idioma primeiro
+      progressFn?.({ type: 'log', message: 'Detectando idioma do documento...' })
       const dataBuffer = await fs.promises.readFile(pdfPath)
       const pdfData = await pdfParse(dataBuffer)
-      let text = pdfData.text || ''
+      const sampleText = pdfData.text?.substring(0, 1000) || ''
 
-      if (!text.trim()) {
-        return res.status(400).json({ error: 'Nenhum texto foi encontrado no PDF. O arquivo pode ser digitalizado (imagem).' })
+      let shouldTranslate = translate
+      if (shouldTranslate && sampleText.trim()) {
+        const detectedLang = await detectLanguage(sampleText)
+        console.log('🌍 Idioma detectado:', detectedLang)
+        progressFn?.({ type: 'log', message: `Idioma detectado: ${detectedLang}` })
+
+        if (detectedLang === 'pt') {
+          console.log('ℹ️ Texto já está em português, desabilitando tradução')
+          progressFn?.({ type: 'log', message: 'Texto já está em português' })
+          shouldTranslate = false
+        }
       }
 
-      progressFn?.({ type: 'log', message: `Texto extraído: ${text.length} caracteres` })
       if (jobId) emitProgress(jobId, { type: 'phase', phase: 'processing' })
 
-      // 2. Traduzir
-      progressFn?.({ type: 'log', message: 'Iniciando tradução...' })
-      const detectedLang = await detectLanguage(text)
-      console.log('🌍 Idioma detectado:', detectedLang)
-
-      if (detectedLang !== 'pt') {
-        text = await translateTextWithProgress(text, progressFn)
-      } else {
-        progressFn?.({ type: 'log', message: 'Texto já está em português, pulando tradução' })
-      }
-
-      if (jobId) emitProgress(jobId, { type: 'phase', phase: 'generating' })
-
-      // 3. Gerar PDF
-      await generatePdf({
-        text,
-        title,
+      // Gera PDF com layout preservado (traduz durante o processo se necessário)
+      await generatePdfWithLayout({
+        pdfPath,
         outputPath: outputPdfPath,
-        coverPath,
+        title,
+        translate: shouldTranslate,
+        targetLang: 'pt',
         progress: progressFn
       })
 
