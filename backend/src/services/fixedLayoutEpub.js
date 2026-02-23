@@ -116,7 +116,7 @@ export async function generateFixedLayoutEpub(options, outputPath) {
     const navXhtml = generateNavXhtml({ title, pages: spineItems })
     await fs.promises.writeFile(path.join(oebpsDir, 'nav.xhtml'), navXhtml)
 
-    // 8. CSS para Fixed Layout
+    // 8. CSS para Fixed Layout com texto sobreposto
     const cssContent = `
 @page {
   margin: 0;
@@ -142,6 +142,32 @@ body {
   width: 100%;
   height: 100%;
   display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+.text-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.text-line {
+  position: absolute;
+  color: #000;
+  font-family: 'Helvetica', 'Arial', sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+  pointer-events: auto;
+  user-select: text;
 }
 `
     await fs.promises.writeFile(path.join(oebpsDir, 'style.css'), cssContent)
@@ -158,22 +184,82 @@ body {
 }
 
 /**
- * Cria página XHTML com Fixed Layout
+ * Cria página XHTML com Fixed Layout e texto traduzido sobreposto
  */
 function createFixedLayoutPage(page, imageFileName) {
+  const { width, height, pageNum, textItems } = page
+
+  let textOverlay = ''
+
+  // Se há textos traduzidos, adiciona overlay
+  if (textItems && textItems.length > 0) {
+    textOverlay = '<div class="text-overlay">\n'
+
+    // Agrupa textos por linha (Y similar)
+    const lines = []
+    const sortedItems = [...textItems].sort((a, b) => {
+      const yDiff = Math.abs(b.y - a.y)
+      if (yDiff > 3) return b.y - a.y
+      return a.x - b.x
+    })
+
+    let currentLine = null
+    for (const item of sortedItems) {
+      if (!currentLine || Math.abs(item.y - currentLine.y) > 3) {
+        if (currentLine) lines.push(currentLine)
+        currentLine = {
+          items: [item],
+          y: item.y,
+          x: item.x,
+          fontSize: item.fontSize
+        }
+      } else {
+        currentLine.items.push(item)
+        currentLine.fontSize = Math.max(currentLine.fontSize, item.fontSize)
+      }
+    }
+    if (currentLine) lines.push(currentLine)
+
+    // Renderiza cada linha de texto traduzido
+    for (const line of lines) {
+      const lineText = line.items
+        .map(item => item.translatedText || item.text)
+        .join(' ')
+        .trim()
+
+      if (lineText.length === 0) continue
+
+      const escapedText = escapeXml(lineText)
+
+      // Calcula posição e tamanho
+      const x = line.x
+      const y = line.y
+      const fontSize = Math.max(6, Math.min(line.fontSize, 18))
+
+      // Calcula largura disponível
+      const lastItem = line.items[line.items.length - 1]
+      const maxWidth = (lastItem.x + lastItem.width) - line.x
+
+      textOverlay += `    <div class="text-line" style="left: ${x.toFixed(2)}px; top: ${y.toFixed(2)}px; font-size: ${fontSize.toFixed(1)}px; max-width: ${maxWidth.toFixed(2)}px;">${escapedText}</div>\n`
+    }
+
+    textOverlay += '  </div>\n'
+  }
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
 <head>
   <meta charset="UTF-8"/>
-  <title>Página ${page.pageNum}</title>
+  <title>Página ${pageNum}</title>
   <link rel="stylesheet" type="text/css" href="../style.css"/>
-  <meta name="viewport" content="width=${page.width}, height=${page.height}"/>
+  <meta name="viewport" content="width=${width}, height=${height}"/>
 </head>
 <body>
   <div class="page">
-    <img src="../images/${imageFileName}" alt="Página ${page.pageNum}" 
-         width="${page.width}" height="${page.height}"/>
+    <img src="../images/${imageFileName}" alt="Página ${pageNum}" 
+         width="${width}" height="${height}"/>
+    ${textOverlay}
   </div>
 </body>
 </html>`

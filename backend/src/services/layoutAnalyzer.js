@@ -142,7 +142,7 @@ function groupTextIntoBlocks(textItems, columns) {
       item.x >= column.xStart && item.x < column.xEnd
     )
 
-    // Ordena por Y (top to bottom)
+    // Ordena por Y (top to bottom) - Y maior = mais acima, então decrescente
     columnItems.sort((a, b) => b.y - a.y)
 
     // Agrupa linhas próximas em blocos
@@ -259,6 +259,7 @@ function orderBlocksForReading(blocks, columns) {
     if (aCol !== bCol) return aCol - bCol
 
     // Mesma coluna: ordena por Y (top to bottom)
+    // Y maior = mais acima, então ordena decrescente para ler de cima para baixo
     return b.yStart - a.yStart
   })
 
@@ -267,7 +268,7 @@ function orderBlocksForReading(blocks, columns) {
 
 /**
  * Converte blocos analisados em HTML estruturado
- * Preserva posições Y como atributos data para posicionamento de imagens
+ * Preserva posições Y e página como atributos data para posicionamento de imagens
  */
 export function blocksToHtml(blocks, options = {}) {
   const { preserveFormatting = true, addSeparators = true } = options
@@ -275,10 +276,12 @@ export function blocksToHtml(blocks, options = {}) {
   let html = ''
 
   for (const block of blocks) {
-    // Adiciona atributos data com informações de posição
-    const positionData = block.yStart && block.yEnd
-      ? ` data-y-start="${block.yStart.toFixed(0)}" data-y-end="${block.yEnd.toFixed(0)}" data-y-mid="${((block.yStart + block.yEnd) / 2).toFixed(0)}"`
-      : ''
+    // Adiciona atributos data com informações de posição E página
+    const positionData = block.yStart && block.yEnd && block.pageNum
+      ? ` data-y-start="${block.yStart.toFixed(0)}" data-y-end="${block.yEnd.toFixed(0)}" data-y-mid="${((block.yStart + block.yEnd) / 2).toFixed(0)}" data-page="${block.pageNum}"`
+      : block.yStart && block.yEnd
+        ? ` data-y-start="${block.yStart.toFixed(0)}" data-y-end="${block.yEnd.toFixed(0)}" data-y-mid="${((block.yStart + block.yEnd) / 2).toFixed(0)}"`
+        : ''
 
     switch (block.type) {
       case 'heading':
@@ -331,6 +334,9 @@ export function reconstructChapters(pageLayouts, options = {}) {
 
   for (const pageLayout of pageLayouts) {
     for (const block of pageLayout.blocks) {
+      // Adiciona número da página ao bloco para rastreamento
+      block.pageNum = pageLayout.pageNum
+
       // Novo capítulo quando encontra heading de nível 1
       if (block.type === 'heading' && block.importance === 1) {
         if (currentChapter && currentChapter.blocks.length > 0) {
@@ -362,9 +368,10 @@ export function reconstructChapters(pageLayouts, options = {}) {
 
   // Se nenhum capítulo foi criado, agrupa tudo
   if (chapters.length === 0) {
+    const allBlocks = pageLayouts.flatMap(p => p.blocks.map(b => ({ ...b, pageNum: p.pageNum })))
     chapters.push({
       title: 'Documento',
-      blocks: pageLayouts.flatMap(p => p.blocks)
+      blocks: allBlocks
     })
   }
 

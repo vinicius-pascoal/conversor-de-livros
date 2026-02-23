@@ -6,7 +6,7 @@ import { promisify } from 'util'
 import pdfParse from 'pdf-parse'
 import Epub from 'epub-gen'
 import { translateText, translateTextWithProgress, detectLanguage } from './translator.js'
-import { renderPdfPagesToSvg } from './pdfRenderer.js'
+import { renderPdfPagesToSvg, renderPdfPagesWithoutText, translatePagesText } from './pdfRenderer.js'
 import { generateFixedLayoutEpub } from './fixedLayoutEpub.js'
 import { analyzePdfLayout, reconstructChapters } from './layoutAnalyzer.js'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
@@ -31,10 +31,10 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     let coverPath = options.coverPath || null
     const keepImages = options.keepImages !== false
     const translateToPt = options.translate === true
-    let useFixedLayout = options.useFixedLayout !== false // Agora Fixed Layout é padrão
+    let useFixedLayout = options.useFixedLayout === true // Reflow é o padrão
     const progress = typeof options.progress === 'function' ? options.progress : null
 
-    console.log('🔄 Iniciando conversão com Fixed Layout EPUB...')
+    console.log('🔄 Iniciando conversão PDF para EPUB...')
     console.log('⚡ fastMode:', fastMode)
     console.log('🖼️ useFixedLayout:', useFixedLayout)
     console.log('🌐 translate:', translateToPt)
@@ -82,38 +82,61 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     }
 
     if (translateToPt && useFixedLayout) {
-      console.log('📖 Tradução + Imagens: usando modo Reflow Enhanced com integração inteligente')
-      progress?.({ type: 'log', message: 'Usando Reflow com tradução e imagens integradas' })
-      progress?.({ type: 'log', message: 'Renderizando páginas do PDF...' })
+      console.log('📖 Tradução + Fixed Layout: renderizando sem texto e traduzindo')
+      progress?.({ type: 'log', message: 'Modo Fixed Layout com tradução ativado' })
+      progress?.({ type: 'log', message: 'Renderizando páginas sem texto original...' })
 
-      console.time('render-pages')
-      const renderResult = await renderPdfPagesToSvg(pdfPath, {
+      // 1. Renderiza páginas removendo texto original
+      console.time('render-pages-no-text')
+      const renderResult = await renderPdfPagesWithoutText(pdfPath, {
         scale: 2.0,
         progress: (msg) => {
           console.log(msg)
           progress?.({ type: 'log', message: msg })
         }
       })
-      console.timeEnd('render-pages')
+      console.timeEnd('render-pages-no-text')
 
-      const { pages, assetsDir } = renderResult
-      console.log(`✅ ${pages.length} páginas renderizadas`)
+      let { pages, assetsDir } = renderResult
+      console.log(`✅ ${pages.length} páginas renderizadas sem texto`)
 
-      // Define capa como primeira página se não fornecida
+      // 2. Traduz os textos extraídos
+      if (detectedLang !== 'pt') {
+        console.log('🌐 Traduzindo textos para português...')
+        console.time('translate-texts')
+        pages = await translatePagesText(pages, {
+          targetLang: 'pt',
+          sourceLang: 'auto',
+          progress: progress
+        })
+        console.timeEnd('translate-texts')
+        console.log('✅ Tradução concluída')
+      } else {
+        console.log('ℹ️ Texto já em português, copiando para translatedText')
+        // Copia texto original para translatedText
+        for (const page of pages) {
+          for (const item of page.textItems) {
+            item.translatedText = item.text
+          }
+        }
+      }
+
+      // 3. Define capa como primeira página se não fornecida
       if (!coverPath && pages.length > 0) {
         coverPath = pages[0].imagePath
         console.log('📔 Capa definida pela primeira página')
       }
 
-      console.log('📚 Gerando EPUB Fixed Layout...')
+      // 4. Gera EPUB Fixed Layout com texto traduzido sobreposto
+      console.log('📚 Gerando EPUB Fixed Layout com texto traduzido...')
       progress?.({ type: 'phase', phase: 'generating' })
-      progress?.({ type: 'log', message: 'Montando estrutura EPUB...' })
+      progress?.({ type: 'log', message: 'Montando estrutura EPUB com texto traduzido...' })
 
       console.time('epub-gen')
       await generateFixedLayoutEpub({
         title,
         author: 'Autor Desconhecido',
-        publisher: 'Conversor PDF-EPUB (Fixed Layout)',
+        publisher: 'Conversor PDF-EPUB (Fixed Layout Traduzido)',
         language: 'pt',
         pages: pages,
         coverImagePath: coverPath
@@ -121,7 +144,7 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
       console.timeEnd('epub-gen')
 
       console.timeEnd('pdf-total')
-      console.log('✨ EPUB Fixed Layout gerado com sucesso!')
+      console.log('✨ EPUB Fixed Layout traduzido gerado com sucesso!')
       progress?.({ type: 'phase', phase: 'complete' })
       progress?.({ type: 'log', message: 'Conversão concluída!' })
 
@@ -186,17 +209,21 @@ async function translateHtmlContent(html) {
 
   console.log(`  🛡️ ${protectedBlocks.length} elementos protegidos (imagens, figuras, etc)`)
 
-  // Coleta todos os textos dentro de tags de conteúdo
+  // Coleta todos os textos dentro de tags de conteúdo, preservando atributos
   const textsToTranslate = []
-  const textPattern = /<(h[1-6]|p)\b[^>]*>([\s\S]*?)<\/\1>/gi
+  const textPattern = /<(h[1-6]|p|div|span|li|td|th)\b([^>]*)>([\s\S]*?)<\/\1>/gi
 
-  workingHtml = workingHtml.replace(textPattern, (fullMatch, tag, content) => {
+  workingHtml = workingHtml.replace(textPattern, (fullMatch, tag, attributes, content) => {
+    // Extrai apenas o texto, removendo tags internas
     const textOnly = content.replace(/<[^>]+>/g, '').trim()
 
-    if (textOnly.length > 10) {
+    // Reduz o limite mínimo para 3 caracteres para não perder textos curtos
+    if (textOnly.length >= 3) {
       textsToTranslate.push({
         original: fullMatch,
         tag: tag,
+        attributes: attributes,  // Preserva atributos originais
+        content: content,         // Conteúdo original (pode ter tags internas)
         textOnly: textOnly
       })
       return `___TEXT_${textsToTranslate.length - 1}___`
@@ -240,11 +267,13 @@ async function translateHtmlContent(html) {
 
   console.log(`  ✅ Tradução concluída, reconstruindo HTML...`)
 
-  // Reconstrói substituindo os placeholders
+  // Reconstrói substituindo os placeholders, preservando atributos
   for (let i = 0; i < textsToTranslate.length; i++) {
     const item = textsToTranslate[i]
     const placeholder = `___TEXT_${i}___`
-    const translatedTag = `<${item.tag}>${item.translated}</${item.tag}>`
+
+    // Reconstrói a tag com atributos originais e texto traduzido
+    const translatedTag = `<${item.tag}${item.attributes}>${item.translated}</${item.tag}>`
     workingHtml = workingHtml.replace(placeholder, translatedTag)
   }
 
@@ -265,13 +294,13 @@ async function translateHtmlContent(html) {
  * DESABILITADO no modo tradução para evitar duplicação e problemas de posicionamento
  */
 /**
- * Integra imagens nos capítulos baseado em posições Y REAIS
- * Abordagem 4 Corrigida: Usa coordenadas Y dos blocos e imagens para posicionamento preciso
+ * Integra imagens nos capítulos baseado em posições Y por página
+ * Abordagem 6: Integra imagens no nível de página antes de agrupar em capítulos
  */
 function integrateImagesIntoChapters(chapters, images, pageLayouts) {
   if (!images || images.length === 0) return chapters
 
-  console.log(`  🖼️ Integrando ${images.length} imagens usando correlação de posições Y reais...`)
+  console.log(`  🖼️ Integrando ${images.length} imagens por página...`)
 
   // Cria mapa de imagens por página
   const imagesByPage = new Map()
@@ -282,99 +311,155 @@ function integrateImagesIntoChapters(chapters, images, pageLayouts) {
     imagesByPage.get(img.page).push(img)
   }
 
-  // Cria mapa de blocos originais por página (com posições Y)
-  const blocksByPage = new Map()
-  for (const pageLayout of pageLayouts) {
-    blocksByPage.set(pageLayout.pageNum, pageLayout.blocks || [])
-  }
-
   // Processa cada capítulo
   const enhancedChapters = chapters.map((chapter, idx) => {
     console.log(`  📄 Processando capítulo ${idx + 1}: "${chapter.title}"...`)
 
     let html = chapter.data
 
-    // Extrai blocos HTML com suas posições Y
-    const blockRegex = /(<(?:p|h[1-6])(?:\s[^>]*data-y-mid="(\d+)"[^>]*)?>.*?<\/(?:p|h[1-6])>)/gis
-    const blocksWithPositions = []
+    // Extrai blocos HTML com suas posições Y e página
+    const blockRegex = /<(p|h[1-6])(?:\s[^>]*)data-y-mid="(\d+)"(?:[^>]*)data-page="(\d+)"(?:[^>]*)>.*?<\/\1>/gis
+    const textBlocksWithPage = []
     let match
 
+    // Reset do regex
+    blockRegex.lastIndex = 0
+
     while ((match = blockRegex.exec(html)) !== null) {
-      blocksWithPositions.push({
-        html: match[1],
-        yMid: match[2] ? parseInt(match[2]) : null,
-        index: match.index
-      })
-    }
-
-    if (blocksWithPositions.length === 0) {
-      console.log(`    ⚠️ Nenhum bloco com posição Y encontrado`)
-      return { ...chapter, data: html }
-    }
-
-    console.log(`  📝 ${blocksWithPositions.length} blocos com posição Y encontrados`)
-
-    // Para cada página, insere imagens nas posições corretas baseado em Y
-    let imagesInserted = 0
-    for (const [pageNum, pageImages] of imagesByPage.entries()) {
-      // Ordena imagens por Y (de cima para baixo, Y maior = topo)
-      const sortedPageImages = [...pageImages].sort((a, b) => b.y - a.y)
-
-      for (const img of sortedPageImages) {
-        // Encontra o bloco de texto mais próximo dessa imagem
-        let closestBlock = null
-        let minDistance = Infinity
-        let insertBefore = true
-
-        for (const block of blocksWithPositions) {
-          if (block.yMid === null) continue
-
-          const distance = Math.abs(img.y - block.yMid)
-          if (distance < minDistance) {
-            minDistance = distance
-            closestBlock = block
-            // Se imagem Y > bloco Y, imagem está ACIMA (inserir antes)
-            // Se imagem Y < bloco Y, imagem está ABAIXO (inserir depois)
-            insertBefore = img.y > block.yMid
-          }
-        }
-
-        if (closestBlock) {
-          const imageHtml = createImageHtml(img, pageNum)
-          const targetHtml = closestBlock.html
-
-          const replacement = insertBefore
-            ? imageHtml + '\n' + targetHtml
-            : targetHtml + '\n' + imageHtml
-
-          // Substitui apenas a primeira ocorrência para manter ordem
-          const index = html.indexOf(targetHtml)
-          if (index !== -1) {
-            html = html.substring(0, index) + replacement + html.substring(index + targetHtml.length)
-            imagesInserted++
-
-            console.log(`    ✅ Imagem P${pageNum} Y:${img.y.toFixed(0)} → ${insertBefore ? 'antes' : 'depois'} bloco Y:${closestBlock.yMid} (dist: ${minDistance.toFixed(0)}px)`)
-
-            // Atualiza a referência do bloco para evitar duplicações
-            closestBlock.html = replacement
-          }
-        } else {
-          console.log(`    ⚠️ Imagem P${pageNum} Y:${img.y.toFixed(0)} → sem bloco próximo, inserindo no início`)
-          html = createImageHtml(img, pageNum) + '\n' + html
-          imagesInserted++
-        }
+      const yMid = match[2] ? parseInt(match[2]) : null
+      const page = match[3] ? parseInt(match[3]) : null
+      if (yMid !== null && page !== null) {
+        textBlocksWithPage.push({
+          type: 'text',
+          html: match[0],
+          yMid: yMid,
+          page: page,
+          originalIndex: match.index
+        })
       }
     }
 
-    console.log(`  📊 Total inserido: ${imagesInserted}/${images.length} imagens`)
+    // Se não tem atributo data-page, tenta integrar de forma mais simples
+    if (textBlocksWithPage.length === 0) {
+      console.log(`    ℹ️ Blocos sem atributo data-page, usando método simplificado`)
+
+      // Extrai blocos apenas com Y
+      const simpleBlockRegex = /<(p|h[1-6])(?:\s[^>]*)data-y-mid="(\d+)"(?:[^>]*)>.*?<\/\1>/gis
+      const textBlocks = []
+
+      simpleBlockRegex.lastIndex = 0
+      while ((match = simpleBlockRegex.exec(html)) !== null) {
+        const yMid = match[2] ? parseInt(match[2]) : null
+        if (yMid !== null) {
+          textBlocks.push({
+            type: 'text',
+            html: match[0],
+            yMid: yMid,
+            originalIndex: match.index
+          })
+        }
+      }
+
+      if (textBlocks.length === 0) {
+        console.log(`    ⚠️ Nenhum bloco com posição Y encontrado`)
+        return { ...chapter, data: html }
+      }
+
+      // Coleta todas as imagens
+      const allImages = []
+      for (const [pageNum, pageImages] of imagesByPage.entries()) {
+        for (const img of pageImages) {
+          allImages.push({
+            type: 'image',
+            pageNum: pageNum,
+            yMid: img.y,
+            img: img
+          })
+        }
+      }
+
+      // Combina e ordena
+      const allElements = [...textBlocks, ...allImages]
+      allElements.sort((a, b) => {
+        // Primeiro por página (se disponível)
+        if (a.pageNum && b.pageNum && a.pageNum !== b.pageNum) {
+          return a.pageNum - b.pageNum
+        }
+        // Depois por Y (decrescente = topo para baixo)
+        return b.yMid - a.yMid
+      })
+
+      const newHtml = allElements.map(el => {
+        if (el.type === 'text') {
+          return el.html
+        } else {
+          return createImageHtml(el.img, el.pageNum)
+        }
+      }).join('\n')
+
+      console.log(`  ✅ Integradas ${allImages.length} imagens (método simplificado)`)
+      return { ...chapter, data: newHtml }
+    }
+
+    // Agrupa blocos por página
+    const elementsByPage = new Map()
+
+    for (const block of textBlocksWithPage) {
+      if (!elementsByPage.has(block.page)) {
+        elementsByPage.set(block.page, [])
+      }
+      elementsByPage.get(block.page).push(block)
+    }
+
+    // Adiciona imagens aos elementos de cada página
+    let totalImagesAdded = 0
+    for (const [pageNum, pageImages] of imagesByPage.entries()) {
+      if (!elementsByPage.has(pageNum)) {
+        elementsByPage.set(pageNum, [])
+      }
+
+      for (const img of pageImages) {
+        elementsByPage.get(pageNum).push({
+          type: 'image',
+          pageNum: pageNum,
+          yMid: img.y,
+          img: img
+        })
+        totalImagesAdded++
+      }
+    }
+
+    console.log(`  📦 Organizando elementos em ${elementsByPage.size} páginas`)
+
+    // Ordena todos os elementos por página e depois por Y
+    const sortedPages = Array.from(elementsByPage.keys()).sort((a, b) => a - b)
+    const orderedElements = []
+
+    for (const pageNum of sortedPages) {
+      const pageElements = elementsByPage.get(pageNum)
+      // Ordena elementos da página por Y (decrescente = topo para baixo)
+      pageElements.sort((a, b) => b.yMid - a.yMid)
+      orderedElements.push(...pageElements)
+    }
+
+    // Reconstrói HTML com elementos ordenados
+    const newHtml = orderedElements.map(el => {
+      if (el.type === 'text') {
+        return el.html
+      } else {
+        return createImageHtml(el.img, el.pageNum)
+      }
+    }).join('\n')
+
+    console.log(`  ✅ Integradas ${totalImagesAdded} imagens mantendo ordem por página e posição Y`)
 
     return {
       ...chapter,
-      data: html
+      data: newHtml
     }
   })
 
-  console.log(`  ✨ Integração concluída com posicionamento baseado em coordenadas Y!`)
+  console.log(`  ✨ Integração concluída!`)
   return enhancedChapters
 }
 
@@ -414,14 +499,31 @@ function findBestInsertionPoint(image, blocks) {
 
 /**
  * Cria HTML para uma imagem com figure e caption
+ * Usa caminho relativo para epub-gen processar corretamente
  */
 function createImageHtml(image, pageNum) {
-  return `
+  try {
+    // Verifica se o arquivo existe
+    if (!fs.existsSync(image.path)) {
+      console.warn(`⚠️ Arquivo de imagem não encontrado: ${image.path}`)
+      return ''
+    }
+
+    // Usa o caminho completo do arquivo para o epub-gen copiar
+    // O epub-gen automaticamente copiará e referenciará a imagem
+    const imagePath = image.path.replace(/\\/g, '/') // Normaliza para formato Unix
+
+    return `
 <figure class="epub-image" data-page="${pageNum}" data-y="${image.y.toFixed(0)}">
-  <img src="${image.path}" alt="Imagem da página ${pageNum}" />
+  <img src="${imagePath}" alt="Imagem da página ${pageNum}" style="max-width:100%; height:auto;" />
   <figcaption>Figura - Página ${pageNum}</figcaption>
 </figure>
 `
+  } catch (err) {
+    console.warn(`⚠️ Erro ao processar imagem:`, err.message)
+    // Retorna vazio ao invés de placeholder para evitar erros
+    return ''
+  }
 }
 
 /**
@@ -588,26 +690,94 @@ async function convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilenam
   // Integra imagens nos capítulos DEPOIS da tradução (Abordagem 4)
   if (extractedImages && extractedImages.length > 0) {
     console.log('🖼️ Integrando imagens nos capítulos usando posições Y...')
-    progress?.({ type: 'log', message: 'Integrando imagens nos capítulos...' })
-    const integratedChapters = integrateImagesIntoChapters(chapters, extractedImages, layoutAnalysis.pages)
-    if (integratedChapters && integratedChapters.length > 0) {
-      chapters = integratedChapters
-      console.log('✅ Imagens integradas com sucesso!')
-      progress?.({ type: 'log', message: 'Imagens integradas!' })
+
+    // Valida imagens antes de integrar
+    const validImages = extractedImages.filter(img => {
+      if (!img.path) {
+        console.warn('⚠️ Imagem sem caminho, ignorando')
+        return false
+      }
+      if (!fs.existsSync(img.path)) {
+        console.warn(`⚠️ Arquivo não encontrado: ${img.path}`)
+        return false
+      }
+      const ext = path.extname(img.path).toLowerCase()
+      if (!['.png', '.jpg', '.jpeg', '.gif'].includes(ext)) {
+        console.warn(`⚠️ Extensão inválida: ${ext} em ${img.path}`)
+        return false
+      }
+      return true
+    })
+
+    console.log(`✅ ${validImages.length}/${extractedImages.length} imagens válidas`)
+    progress?.({ type: 'log', message: `${validImages.length} imagens válidas encontradas` })
+
+    if (validImages.length > 0) {
+      progress?.({ type: 'log', message: 'Integrando imagens nos capítulos...' })
+      try {
+        const integratedChapters = integrateImagesIntoChapters(chapters, validImages, layoutAnalysis.pages)
+        if (integratedChapters && integratedChapters.length > 0) {
+          chapters = integratedChapters
+          console.log('✅ Imagens integradas com sucesso!')
+          progress?.({ type: 'log', message: 'Imagens integradas!' })
+        } else {
+          console.warn('⚠️ Integração retornou capítulos vazios, mantendo originais')
+        }
+      } catch (imgErr) {
+        console.error('⚠️ Erro ao integrar imagens, continuando sem elas:', imgErr.message)
+        progress?.({ type: 'log', message: 'Aviso: imagens não puderam ser integradas' })
+      }
     } else {
-      console.warn('⚠️ Integração retornou capítulos vazios, mantendo originais')
+      console.warn('⚠️ Nenhuma imagem válida para integrar')
+      progress?.({ type: 'log', message: 'Continuando sem imagens' })
     }
   }
 
   // Gera EPUB com estrutura reconstruída
   console.log(`📊 Preparando EPUB: ${chapters?.length || 0} capítulos, ${extractedImages?.length || 0} imagens`)
 
-  // Verifica se há imagens nos capítulos
+  // Verifica e valida imagens nos capítulos
   const totalImagesInChapters = chapters.reduce((count, ch) => {
     const matches = ch.data.match(/<img[^>]+>/g)
     return count + (matches ? matches.length : 0)
   }, 0)
   console.log(`🖼️ Total de tags <img> encontradas nos capítulos: ${totalImagesInChapters}`)
+
+  // Remove imagens inválidas dos capítulos para evitar erros no epub-gen
+  if (totalImagesInChapters > 0) {
+    console.log('🔍 Validando referências de imagens nos capítulos...')
+    let removedImages = 0
+
+    for (const chapter of chapters) {
+      // Remove tags img que referenciam arquivos inexistentes
+      chapter.data = chapter.data.replace(/<img[^>]+src="([^"]+)"[^>]*>/gi, (match, src) => {
+        // Verifica se é caminho de arquivo válido
+        if (src.startsWith('data:')) {
+          // Data URL, mantém
+          return match
+        }
+
+        // Normaliza caminho
+        const normalizedPath = src.replace(/\//g, path.sep)
+
+        if (!fs.existsSync(normalizedPath)) {
+          console.warn(`⚠️ Removendo referência a imagem inexistente: ${src}`)
+          removedImages++
+          // Remove a tag img mas mantém a figura se houver
+          return ''
+        }
+
+        return match
+      })
+
+      // Remove figuras vazias
+      chapter.data = chapter.data.replace(/<figure[^>]*>\s*<\/figure>/gi, '')
+    }
+
+    if (removedImages > 0) {
+      console.log(`🧹 Removidas ${removedImages} referências de imagens inválidas`)
+    }
+  }
 
   // Debug: mostra preview do primeiro capítulo
   if (chapters.length > 0) {
@@ -650,25 +820,66 @@ async function convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilenam
       fastMode ? 15000 : 30000,
       'epub-gen'
     )
+    console.timeEnd('epub-gen')
+    console.log('✨ EPUB Reflow com layout inteligente gerado!')
+    progress?.({ type: 'phase', phase: 'complete' })
   } catch (err) {
-    console.error('⚠️ Erro ao gerar EPUB, tentando modo simplificado:', err.message)
+    console.error('⚠️ Erro ao gerar EPUB com imagens:', err.message)
+    console.log('🔄 Tentando novamente sem imagens...')
+
+    // Remove todas as imagens dos capítulos
+    const chaptersWithoutImages = chapters.map(ch => ({
+      ...ch,
+      data: ch.data
+        .replace(/<figure[^>]*>[\s\S]*?<\/figure>/gi, '')
+        .replace(/<img[^>]*\/?>/gi, '')
+    }))
+
     const fallbackOptions = {
       title,
       author: 'Autor Desconhecido',
+      publisher: 'Conversor PDF-EPUB (Reflow)',
       cover: coverPath || '',
-      content: chapters.slice(0, 1), // Apenas primeiro capítulo
-      lang: 'pt'
+      content: chaptersWithoutImages,
+      lang: 'pt',
+      tocTitle: 'Índice',
+      appendChapterTitles: true,
+      version: 3,
+      css: epubOptions.css
     }
-    await runWithTimeout(
-      new Epub(fallbackOptions, epubPath).promise,
-      15000,
-      'epub-gen-fallback'
-    )
-  }
 
-  console.timeEnd('epub-gen')
-  console.log('✨ EPUB Reflow com layout inteligente gerado!')
-  progress?.({ type: 'phase', phase: 'complete' })
+    try {
+      await runWithTimeout(
+        new Epub(fallbackOptions, epubPath).promise,
+        fastMode ? 15000 : 30000,
+        'epub-gen-no-images'
+      )
+      console.timeEnd('epub-gen')
+      console.log('✨ EPUB gerado com sucesso (sem imagens)')
+      progress?.({ type: 'log', message: 'EPUB gerado sem imagens devido a erros' })
+      progress?.({ type: 'phase', phase: 'complete' })
+    } catch (fallbackErr) {
+      console.error('⚠️ Fallback também falhou, tentando modo ultra-simplificado')
+
+      // Último fallback: apenas primeiros capítulos
+      const minimalOptions = {
+        title,
+        author: 'Autor Desconhecido',
+        cover: '',
+        content: chaptersWithoutImages.slice(0, Math.min(5, chaptersWithoutImages.length)),
+        lang: 'pt'
+      }
+
+      await runWithTimeout(
+        new Epub(minimalOptions, epubPath).promise,
+        15000,
+        'epub-gen-minimal'
+      )
+      console.timeEnd('epub-gen')
+      console.log('✨ EPUB gerado em modo reduzido')
+      progress?.({ type: 'phase', phase: 'complete' })
+    }
+  }
 
   return { epubPath }
 }
