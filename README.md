@@ -1,6 +1,8 @@
-# Conversor de PDF para EPUB
+# Conversor de Livros
 
-Aplicação completa para converter arquivos PDF em formato EPUB, preservando imagens e estrutura do documento original. Frontend em Next.js e backend em Node.js com Poppler para extração de imagens.
+Aplicação completa para converter arquivos PDF em formato EPUB ou gerar PDF traduzido, preservando imagens e estrutura do documento original. Frontend em Next.js e backend em Node.js com pdf.js e node-canvas para extração de imagens e tradução automática.
+
+![Demo da Aplicação](demo.png)
 
 ## 📁 Estrutura do Projeto
 
@@ -10,7 +12,7 @@ conversor-de-livros/
 │   ├── app/
 │   ├── Dockerfile
 │   └── package.json
-├── backend/               # Servidor Node.js + Poppler
+├── backend/               # Servidor Node.js + Express
 │   ├── src/
 │   ├── Dockerfile
 │   └── package.json
@@ -20,87 +22,78 @@ conversor-de-livros/
 
 ## 🚀 Como Executar
 
-### Com Docker (Recomendado)
+### Desenvolvimento Local (Recomendado)
 
-A forma mais simples de executar o projeto, sem necessidade de instalar dependências no sistema. Inclui **hot reload** automático durante desenvolvimento.
+A forma mais prática para desenvolvimento, com hot reload automático.
+
+#### Pré-requisitos
+
+- **Node.js 18+** - [Download aqui](https://nodejs.org/)
+- **npm** ou **yarn** - Incluído com Node.js
+
+#### Passos
+
+**1. Clone o repositório**
+
+```bash
+git clone https://github.com/vinicius-pascoal/conversor-de-livros.git
+cd conversor-de-livros
+```
+
+**2. Configure e inicie o Backend**
+
+```bash
+cd backend
+npm install
+npm run dev
+```
+
+O servidor estará rodando em `http://localhost:3001`
+
+**3. Em outro terminal, configure e inicie o Frontend**
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+A aplicação estará disponível em `http://localhost:3000`
+
+#### Variáveis de Ambiente
+
+Crie um arquivo `.env` no backend (opcional):
+```env
+PORT=3001
+FRONTEND_URL=http://localhost:3000
+MAX_UPLOAD_MB=200
+FAST_MODE_DEFAULT=true
+```
+
+Crie um arquivo `.env.local` no frontend (opcional):
+```env
+NEXT_PUBLIC_API_URL=http://localhost:3001
+```
+
+### Com Docker
+
+Alternativa para executar sem instalar Node.js localmente.
 
 #### Desenvolvimento (com hot reload)
 
 ```bash
-# Build das imagens de desenvolvimento
-docker-compose build
-
-# Iniciar os serviços
-docker-compose up
+# Build e iniciar
+docker-compose up --build
 ```
 
 A aplicação estará disponível em:
 - **Frontend**: http://localhost:3000
 - **Backend**: http://localhost:3001
 
-Qualquer alteração no código será refletida automaticamente sem necessidade de rebuild. O backend usa **nodemon** e o frontend usa o **hot reload nativo do Next.js**.
-
-Para parar os containers:
+Para parar:
 ```bash
 docker-compose down
 ```
-
-#### Produção (compilado)
-
-Para uma build otimizada de produção:
-
-```bash
-# Build com Dockerfile de produção
-docker build -f backend/Dockerfile -t conversor-backend:prod ./backend
-docker build -f frontend/Dockerfile -t conversor-frontend:prod ./frontend
-
-# Então use as imagens em produção
-```
-
-### Sem Docker (Desenvolvimento Local)
-
-⚠️ **Atenção**: Para rodar localmente sem Docker, você precisa instalar o Poppler no seu sistema:
-- **Windows**: Baixar de https://github.com/oschwartz10612/poppler-windows/releases/ e adicionar ao PATH
-- **Linux**: `sudo apt-get install poppler-utils`
-- **macOS**: `brew install poppler`
-
-#### Backend
-
-1. Navegue até a pasta do backend:
-```bash
-cd backend
-```
-
-2. Instale as dependências:
-```bash
-npm install
-```
-
-3. Inicie o servidor:
-```bash
-npm run dev
-```
-
-O servidor estará rodando em `http://localhost:3001`
-
-#### Frontend
-
-1. Abra um novo terminal e navegue até a pasta do frontend:
-```bash
-cd frontend
-```
-
-2. Instale as dependências:
-```bash
-npm install
-```
-
-3. Inicie o servidor de desenvolvimento:
-```bash
-npm run dev
-```
-
-A aplicação estará disponível em `http://localhost:3000`
 
 ## 🛠️ Tecnologias Utilizadas
 
@@ -115,9 +108,12 @@ A aplicação estará disponível em `http://localhost:3000`
 - **Express** - Framework web
 - **Multer** - Upload de arquivos (PDF + imagem de capa)
 - **pdf-parse** - Extração de texto de PDF
+- **pdfjs-dist** - Renderização e extração de imagens do PDF
+- **node-canvas** - Manipulação de imagens em alta qualidade
 - **epub-gen** - Geração de arquivos EPUB
-- **Poppler (pdfimages)** - Extração de imagens do PDF
-- **CORS** - Comunicação entre frontend e backend
+- **Google Translate API** - Tradução automática de texto
+- **Swagger/OpenAPI** - Documentação da API
+- **Server-Sent Events (SSE)** - Progresso em tempo real
 
 ### DevOps
 - **Docker** - Containerização
@@ -125,40 +121,42 @@ A aplicação estará disponível em `http://localhost:3000`
 
 ## 📝 Funcionalidades
 
+### Formatos de Saída
+- ✅ **Conversão de PDF para EPUB** - Livro digital com texto fluido
+- ✅ **Geração de PDF traduzido** - Novo PDF com layout preservado e tradução para pt-BR
+
+### Modos de Conversão (EPUB)
+- ⚡ **Modo Rápido** - Um único capítulo, processamento mais rápido
+- 📖 **Modo Completo** - Múltiplos capítulos com índice navegável
+
+### Recursos
 - ✅ Upload de arquivos PDF via drag & drop ou clique
-- ✅ Conversão de PDF para EPUB preservando estrutura
 - ✅ **Extração automática de imagens do PDF**
 - ✅ **Inserção de imagens nas posições originais do documento**
 - ✅ **Upload opcional de capa personalizada**
 - ✅ **Capa automática usando primeira imagem extraída**
-- ✅ Modo rápido (capítulo único) e modo completo (múltiplos capítulos)
+- ✅ **Tradução automática para português pt-BR**
+- ✅ **Detecção automática de idioma do documento**
+- ✅ **Progresso em tempo real com Server-Sent Events (SSE)**
 - ✅ Download automático do arquivo convertido
 - ✅ Interface responsiva e moderna
 - ✅ Validação de tipo de arquivo
 - ✅ Feedback visual durante o processo
-- ✅ Logs detalhados de timing para diagnóstico
+- ✅ Logs detalhados para diagnóstico
+- ✅ Documentação Swagger/OpenAPI interativa
 
-## 🔧 Configuração
+## � Documentação da API
 
-### Backend (.env)
-```env
-PORT=3001
-FRONTEND_URL=http://localhost:3000
-FAST_MODE_DEFAULT=true
+Acesse a documentação Swagger interativa em:
+```
+http://localhost:3001/api-docs
 ```
 
-**Variáveis disponíveis:**
-- `PORT`: Porta do servidor backend (padrão: 3001)
-- `FRONTEND_URL`: URL do frontend para CORS (padrão: http://localhost:3000)
-- `FAST_MODE_DEFAULT`: Modo rápido ativo por padrão (true/false)
-
-### Frontend (.env.local)
-```env
-NEXT_PUBLIC_API_URL=http://localhost:3001
-```
-
-**Variáveis disponíveis:**
-- `NEXT_PUBLIC_API_URL`: URL da API backend
+A documentação inclui:
+- Todos os endpoints disponíveis
+- Parâmetros e exemplos de requisição
+- Respostas esperadas
+- Interface para testar a API diretamente
 
 ## ⚙️ Opções Avançadas
 
@@ -166,14 +164,28 @@ NEXT_PUBLIC_API_URL=http://localhost:3001
 
 A rota `/api/convert` aceita os seguintes parâmetros via query string:
 
-- **`mode=fast`**: Ativa modo rápido (capítulo único, conversão mais rápida)
-- **`mode=full`**: Modo completo (múltiplos capítulos)
-- **`keepImages=true`**: Preserva imagens do PDF (padrão)
-- **`keepImages=false`**: Remove imagens (conversão somente texto)
+- **`outputFormat`**: Formato de saída (padrão: `epub`)
+  - `epub`: Gera livro digital em formato EPUB
+  - `pdf`: Gera novo PDF traduzido para pt-BR
+- **`mode`**: Modo de conversão (apenas para EPUB, padrão: `fast`)
+  - `fast`: ⚡ **Rápido** - Um único capítulo, processamento mais rápido
+  - `full`: 📖 **Completo** - Múltiplos capítulos com índice navegável
+- **`translate`**: Traduzir conteúdo para pt-BR (padrão: `false`)
+  - Obrigatório (sempre `true`) quando `outputFormat=pdf`
+  - Opcional para `outputFormat=epub`
+- **`extractImages`**: Extrair e incluir imagens (padrão: `true`)
+- **`jobId`**: ID único para rastreamento em tempo real via SSE
 
-**Exemplo:**
-```
-POST http://localhost:3001/api/convert?mode=fast&keepImages=true
+**Exemplos:**
+```bash
+# EPUB completo com tradução
+POST http://localhost:3001/api/convert?outputFormat=epub&mode=full&translate=true
+
+# PDF traduzido
+POST http://localhost:3001/api/convert?outputFormat=pdf
+
+# EPUB rápido sem tradução
+POST http://localhost:3001/api/convert?mode=fast&translate=false
 ```
 
 ### Upload de Arquivos
@@ -188,39 +200,50 @@ Se nenhuma capa for enviada e `keepImages=true`, a primeira imagem extraída do 
 
 ### Backend
 - `src/index.js` - Servidor principal Express
-- `src/routes/convert.js` - Rotas de conversão e upload
-- `src/services/converter.js` - Lógica de conversão PDF → EPUB
-  - Extração de texto com `pdf-parse`
-  - Extração de imagens com `pdfimages` (Poppler)
-  - Posicionamento de imagens nas localizações originais
-  - Upload de PDF via drag & drop
-  - Seleção opcional de capa
-  - Feedback visual de progresso
+- `src/routes/` - Rotas da API
+  - `convert.js` - Conversão de PDF para EPUB/PDF traduzido
+  - `health.js` - Health check
+  - `progress.js` - SSE para progresso em tempo real
+- `src/services/` - Lógica de negócio
+  - `converter.js` - Conversão PDF → EPUB com extração de imagens
+  - `translator.js` - Tradução automática
+  - `pdfGenerator.js` - Geração de PDF traduzido
+  - `pdfGeneratorWithLayout.js` - PDF com layout preservado
+  - `layoutAnalyzer.js` - Análise de estrutura do PDF
+  - `pdfRenderer.js` - Renderização de páginas
+- `src/swagger.js` - Configuração do Swagger
+
+### Frontend
+- `app/page.tsx` - Página principal com interface
 - `app/layout.tsx` - Layout da aplicação
-- `app/globals.css` - Estilos globais e componentes
-- `Dockerfile` - Imagem Docker do frontend Next.js
-- `.dockerignore` - Arquivos ignorados no build Docker
+- `app/globals.css` - Estilos globais
 
 ## 🎯 Como Funciona
 
 ### Processo de Conversão
 
 1. **Upload**: Usuário envia PDF e opcionalmente uma imagem de capa
-2. **Extração de Texto**: `pdf-parse` extrai todo o texto do PDF
-3. **Extração de Imagens**: `pdfimages -list` identifica páginas das imagens, depois `-png` extrai
-4. **Divisão em Capítulos**: Texto dividido em capítulos (modo normal) ou capítulo único (modo rápido)
-5. **Posicionamento de Imagens**: Cada imagem é inserida na posição proporcional baseada na página original
-6. **Geração EPUB**: `epub-gen` cria o arquivo EPUB com texto, imagens e capa
-7. **Download**: Frontend recebe o EPUB e inicia download automático
-8. **Limpeza**: Arquivos temporários são removidos do servidor
+2. **Detecção de Idioma**: Sistema detecta automaticamente o idioma do documento
+3. **Extração de Texto**: `pdf-parse` extrai todo o texto do PDF
+4. **Extração de Imagens**: `pdfjs-dist` identifica e extrai imagens em alta qualidade usando `node-canvas`
+5. **Tradução (opcional)**: Texto é traduzido para pt-BR usando Google Translate API
+6. **Divisão em Capítulos**: Texto dividido em capítulos (modo completo) ou capítulo único (modo rápido)
+7. **Posicionamento de Imagens**: Cada imagem é inserida na posição proporcional baseada na página original
+8. **Geração**: 
+   - **EPUB**: `epub-gen` cria o livro digital com texto, imagens e capa
+   - **PDF**: Gera novo PDF com texto traduzido e layout preservado
+9. **Download**: Frontend recebe o arquivo e inicia download automático
+10. **Limpeza**: Arquivos temporários são removidos do servidor
 
 ### Posicionamento de Imagens
 
-O sistema usa o número da página reportado por `pdfimages -list` para calcular onde inserir cada imagem:
+O sistema usa `pdfjs-dist` para extrair imagens com informações de posição:
 
-- Se o PDF tem 100 páginas divididas em 5 capítulos (20 páginas cada)
-- Uma imagem na página 23 vai para o Capítulo 2 (páginas 21-40)
-- É inserida a ~15% do conteúdo do capítulo (página 23 é a 3ª de 20)
+- Cada imagem mantém referência à página original do PDF
+- No modo completo: imagens são distribuídas proporcionalmente entre os capítulos
+- No modo rápido: imagens são inseridas em ordem no capítulo único
+- Sistema filtra imagens muito pequenas (< 32x32) para evitar ícones e artefatos
+- Imagens são renderizadas em alta qualidade (2x scale) usando node-canvas
 
 Isso garante que as imagens apareçam aproximadamente nas mesmas posições do PDF original.
 
@@ -228,7 +251,7 @@ Isso garante que as imagens apareçam aproximadamente nas mesmas posições do P
 
 ### Arquitetura
 
-- **Backend Container**: Node.js 18 Slim + Poppler
+- **Backend Container**: Node.js 18 Slim + dependências nativas (Cairo, Pango, Canvas)
 - **Frontend Container**: Node.js 18 Slim + Next.js
 - **Network**: Bridge automático entre containers
 - **Volumes**: 
@@ -307,11 +330,22 @@ taskkill /PID <PID> /F
 # ou mudar as portas no docker-compose.yml
 ```
 
-### Poppler não encontrado (backend)
+### Erro ao instalar dependências do Canvas (desenvolvimento local)
 
-Se receber erro sobre `pdfimages`, certifique-se que:
-- Está usando Docker (Poppler é instalado na imagem)
-- Se rodar localmente, instale Poppler no seu sistema
+**Windows:**
+- Instale as ferramentas de build: `npm install --global windows-build-tools`
+- Ou instale o Visual Studio Build Tools manualmente
+
+**Linux:**
+```bash
+sudo apt-get install -y build-essential libcairo2-dev libpango1.0-dev \
+  libjpeg-dev libgif-dev librsvg2-dev
+```
+
+**macOS:**
+```bash
+brew install pkg-config cairo pango libpng jpeg giflib librsvg
+```
 
 ### Frontend não conecta ao Backend
 
@@ -333,33 +367,30 @@ Sinta-se à vontade para abrir issues e pull requests!
 
 ### 🔧 Melhorias em Desenvolvimento
 
-- [ ] **Ajuste preciso de posicionamento de imagens**
-  - Melhorar algoritmo de posicionamento de imagens no EPUB
-  - Calcular posição exata baseada em coordenadas do PDF
-  - Usar análise de texto ao redor da imagem para posicionamento mais preciso
-  - Considerar uso de bibliotecas como `pdf.js` para extração de coordenadas
-  - Testar com diferentes tipos de PDFs (acadêmicos, livros, revistas)
-
-- [ ] **Tradutor automático de PDF para EPUB**
-  - Implementar detecção automática de idioma do PDF
-  - Adicionar tradução automática para pt-BR durante conversão
-  - Integrar API de tradução (Google Translate, DeepL ou similar)
-  - Opção de selecionar idioma de origem e destino manualmente
-  - Preservar formatação e estrutura durante tradução
-  - Adicionar toggle na interface para ativar/desativar tradução
-  - Cache de traduções para otimizar performance
-  - Suporte a múltiplos idiomas de saída
+- [x] ~~**Tradutor automático de PDF**~~ ✅ **Implementado**
+  - ✅ Detecção automática de idioma do PDF
+  - ✅ Tradução automática para pt-BR durante conversão
+  - ✅ Integração com Google Translate
+  - ✅ Preservação de formatação e estrutura durante tradução
+  - ✅ Toggle na interface para ativar/desativar tradução
+  - ✅ Geração de PDF traduzido com layout preservado
+  - [ ] Cache de traduções para otimizar performance
+  - [ ] Suporte a múltiplos idiomas de saída (além de pt-BR)
 
 ### 🎯 Roadmap Futuro
 
+- [x] ~~API REST documentada com Swagger~~ ✅ Implementado
+- [x] ~~Tradução automática para pt-BR~~ ✅ Implementado
+- [x] ~~Geração de PDF traduzido~~ ✅ Implementado
+- [x] ~~Detecção automática de idioma~~ ✅ Implementado
+- [x] ~~Progresso em tempo real (SSE)~~ ✅ Implementado
 - [ ] Suporte a outros formatos de entrada (DOCX, TXT, MOBI)
 - [ ] Editor EPUB integrado para ajustes pós-conversão
 - [ ] Prévia do EPUB antes do download
 - [ ] Histórico de conversões
-- [ ] Processamento em lote (múltiplos PDFs)
-- [ ] API REST documentada com Swagger
 - [ ] Testes automatizados (unit + integration)
 - [ ] CI/CD com GitHub Actions
+- [ ] Suporte a múltiplos idiomas de tradução (além de pt-BR)
 
 
 ## 📄 Licença

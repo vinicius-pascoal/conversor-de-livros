@@ -1,7 +1,6 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { execFile } from 'child_process'
 import { promisify } from 'util'
 import pdfParse from 'pdf-parse'
 import Epub from 'epub-gen'
@@ -10,8 +9,6 @@ import { renderPdfPagesToSvg } from './pdfRenderer.js'
 import { analyzePdfLayout, analyzePdfLayoutWithParagraphs, reconstructChapters } from './layoutAnalyzer.js'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { createCanvas } from 'canvas'
-
-const execFileAsync = promisify(execFile)
 
 // Garante que etapas críticas não fiquem penduradas indefinidamente
 async function runWithTimeout(promise, ms, label) {

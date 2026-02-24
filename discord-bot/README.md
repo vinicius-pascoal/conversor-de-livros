@@ -4,10 +4,19 @@ Bot Discord completo para converter PDFs em EPUBs com as mesmas funcionalidades 
 
 ## 🚀 Features
 
-- ✅ Comando `/convert` para converter PDFs para EPUB
+### Formatos de Saída
+- ✅ Conversão de PDF para EPUB (livro digital)
+- ✅ Geração de PDF traduzido (novo PDF com tradução para pt-BR)
+
+### Modos de Conversão (EPUB)
+- ⚡ **Modo Rápido** - Um único capítulo, processamento mais rápido
+- 📖 **Modo Completo** - Múltiplos capítulos com índice navegável
+
+### Recursos
+- ✅ Comando `/convert` com suporte a EPUB e PDF traduzido
 - ✅ Suporte a capas customizadas (JPG/PNG)
-- ✅ Modo rápido (um capítulo) ou completo (múltiplos capítulos)
-- ✅ Tradução automática para português
+- ✅ Tradução automática para português pt-BR
+- ✅ Detecção automática de idioma
 - ✅ Extração inteligente de imagens do PDF
 - ✅ Suporte a textos de até 800k caracteres
 - ✅ Feedback em tempo real com Embeds do Discord
@@ -90,19 +99,32 @@ docker run --env-file .env conversor-bot
 ### Comando /convert
 
 ```
-/convert pdf:[arquivo.pdf] capa:[imagem.png] modo:completo traduzir:true
+/convert pdf:[arquivo.pdf] formato:epub modo:completo traduzir:true capa:[imagem.png]
 ```
 
 **Opções:**
 - `pdf` (obrigatório): Arquivo PDF para converter
-- `capa` (opcional): Imagem de capa (JPG/PNG)
-- `modo` (opcional): `rápido` ou `completo`
-- `traduzir` (opcional): `true` ou `false`
+- `formato` (opcional): `epub` (padrão) ou `pdf-traduzido`
+  - `epub`: Gera livro digital em formato EPUB
+  - `pdf-traduzido`: Gera novo PDF traduzido para pt-BR
+- `modo` (opcional, apenas para EPUB): `rápido` ou `completo`
+  - ⚡ `rápido`: Um único capítulo, processamento mais rápido
+  - 📖 `completo`: Múltiplos capítulos com índice navegável
+- `traduzir` (opcional): `true` ou `false` - Traduzir para pt-BR
+  - Obrigatório (sempre true) para `formato:pdf-traduzido`
+- `capa` (opcional): Imagem de capa (JPG/PNG) - apenas para EPUB
 
-### Exemplo de uso no Discord
+### Exemplos de uso no Discord
 
 ```
-/convert pdf:livro.pdf modo:completo traduzir:true
+# Gerar EPUB completo com tradução
+/convert pdf:livro.pdf formato:epub modo:completo traduzir:true
+
+# Gerar PDF traduzido
+/convert pdf:documento.pdf formato:pdf-traduzido
+
+# Gerar EPUB rápido sem tradução
+/convert pdf:livro.pdf modo:rápido traduzir:false
 ```
 
 ### Comando /help
