@@ -1,6 +1,6 @@
 ﻿'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import axios from 'axios'
 
 type ConversionMode = 'fast' | 'full'
@@ -22,6 +22,14 @@ export default function Home() {
   const [uploadPercent, setUploadPercent] = useState<number>(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
+  const logEndRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll do log para o final
+  useEffect(() => {
+    if (logEndRef.current) {
+      logEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [progressLog])
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
@@ -181,8 +189,41 @@ export default function Home() {
       : ' Converter para EPUB'
 
   const phaseSteps: ConversionPhase[] = ['uploading', 'extracting', 'processing', 'translating', 'generating']
-  const phaseIcons: Record<string, string> = { uploading: '', extracting: '', processing: '', translating: '', generating: '' }
-  const phaseNames: Record<string, string> = { uploading: 'Upload', extracting: 'Extração', processing: 'Processando', translating: 'Tradução', generating: 'Gerando' }
+  const phaseIcons: Record<string, string> = {
+    uploading: '📤',
+    extracting: '🔍',
+    processing: '⚙️',
+    translating: '🌐',
+    generating: '📦'
+  }
+  const phaseNames: Record<string, string> = {
+    uploading: 'Upload',
+    extracting: 'Extração',
+    processing: 'Processando',
+    translating: 'Tradução',
+    generating: 'Gerando'
+  }
+
+  const getLogIcon = (logMessage: string): string => {
+    const msg = logMessage.toLowerCase()
+    if (msg.includes('arquivo recebido') || msg.includes('enviando')) return '📥'
+    if (msg.includes('detectando idioma') || msg.includes('idioma')) return '🔍'
+    if (msg.includes('traduzindo') || msg.includes('tradução')) return '🌐'
+    if (msg.includes('analisando') || msg.includes('estrutura')) return '📊'
+    if (msg.includes('capítulo') || msg.includes('seção')) return '📑'
+    if (msg.includes('imagem')) return '🖼️'
+    if (msg.includes('gerando') || msg.includes('montando')) return '⚡'
+    if (msg.includes('concluí') || msg.includes('sucesso')) return '✅'
+    if (msg.includes('erro') || msg.includes('falha')) return '❌'
+    if (msg.includes('pdf')) return '📄'
+    if (msg.includes('epub')) return '📘'
+    return '💬'
+  }
+
+  const currentPhaseIndex = phaseSteps.indexOf(conversionPhase as any)
+  const progressPercent = conversionPhase === 'complete' ? 100 :
+    conversionPhase === 'idle' ? 0 :
+      Math.round(((currentPhaseIndex + 1) / phaseSteps.length) * 100)
 
   return (
     <div className="page-wrapper">
@@ -191,14 +232,18 @@ export default function Home() {
       {/* Progresso */}
       {isConverting && (
         <div className="card progress-card">
-          <h2 className="card-title"> Progresso</h2>
+          <div className="progress-header">
+            <h2 className="card-title">📊 Progresso da Conversão</h2>
+            <div className="progress-percentage">{progressPercent}%</div>
+          </div>
           <div className="conversion-progress">
             <div className="progress-phases">
               {phaseSteps.map((phase, idx) => {
                 const currentIdx = phaseSteps.indexOf(conversionPhase as any)
                 const isActive = currentIdx >= idx || conversionPhase === 'complete'
+                const isCurrent = currentIdx === idx
                 return (
-                  <div key={phase} className={`phase ${isActive ? 'active' : ''}`}>
+                  <div key={phase} className={`phase ${isActive ? 'active' : ''} ${isCurrent ? 'current' : ''}`}>
                     <div className="phase-icon">{phaseIcons[phase]}</div>
                     <div className="phase-label">{phaseNames[phase]}</div>
                   </div>
@@ -206,17 +251,30 @@ export default function Home() {
               })}
             </div>
             <div className="progress-bar-container">
-              <div className="progress-bar" style={{ width: progressBarWidth }} />
+              <div className="progress-bar" style={{ width: `${progressPercent}%` }}>
+                <div className="progress-bar-shine"></div>
+              </div>
             </div>
             <div className="progress-info">
-              <div className="progress-icon">{conversionPhase === 'complete' ? '' : ''}</div>
+              <div className="progress-icon">{conversionPhase === 'complete' ? '🎉' : '⏳'}</div>
               <div className="progress-text">{phaseLabels[conversionPhase]}</div>
             </div>
             {progressLog.length > 0 && (
-              <div className="progress-logs">
-                {progressLog.slice(-6).map((l, idx) => (
-                  <div key={idx} className="progress-log-item"> {l}</div>
-                ))}
+              <div className="progress-logs-container">
+                <div className="progress-logs-header">
+                  <span className="logs-title">📋 Log de Atividades</span>
+                  <span className="logs-count">{progressLog.length} mensagens</span>
+                </div>
+                <div className="progress-logs">
+                  {progressLog.map((l, idx) => (
+                    <div key={idx} className="progress-log-item">
+                      <span className="log-icon">{getLogIcon(l)}</span>
+                      <span className="log-text">{l}</span>
+                      <span className="log-time">{new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                    </div>
+                  ))}
+                  <div ref={logEndRef} />
+                </div>
               </div>
             )}
           </div>
