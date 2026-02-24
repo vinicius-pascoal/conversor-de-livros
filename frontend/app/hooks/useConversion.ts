@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import axios from 'axios'
 import type { ConversionMode, OutputFormat, ConversionPhase, MessageData } from '../types'
+import { DEFAULT_TARGET_LANGUAGE } from '../constants/languages'
 
 interface UseConversionOptions {
   selectedFile: File | null
@@ -9,6 +10,7 @@ interface UseConversionOptions {
   conversionMode: ConversionMode
   translateToPt: boolean
   extractImages: boolean
+  targetLang?: string
   setConversionPhase: (phase: ConversionPhase) => void
   setProgressLog: React.Dispatch<React.SetStateAction<string[]>>
   setUploadPercent: (percent: number) => void
@@ -29,6 +31,7 @@ export function useConversion(options: UseConversionOptions) {
       conversionMode,
       translateToPt,
       extractImages,
+      targetLang = DEFAULT_TARGET_LANGUAGE,
       setConversionPhase,
       setProgressLog,
       setUploadPercent,
@@ -73,7 +76,8 @@ export function useConversion(options: UseConversionOptions) {
         `?mode=${conversionMode}` +
         `&jobId=${jobId}` +
         `&translate=${shouldTranslate}` +
-        `&extractImages=${extractImages}` +
+        `&extractImages=${extractImages +
+        `&targetLang=${targetLang}`}` +
         `&outputFormat=${outputFormat}`
 
       const response = await axios.post(url, formData, {
@@ -85,8 +89,9 @@ export function useConversion(options: UseConversionOptions) {
 
       es.close()
 
-      const baseName = selectedFile.name.replace('.pdf', '')
-      const downloadName = isPdfMode ? `${baseName}_pt-br.pdf` : `${baseName}.epub`
+      const baseName = selectedFile.name.replace(/\.[^/.]+$/, '')
+      const langSuffix = targetLang === 'pt' ? '_pt-br' : `_${targetLang}`
+      const downloadName = isPdfMode ? `${baseName}${langSuffix}.pdf` : `${baseName}.epub`
 
       const blobUrl = window.URL.createObjectURL(new Blob([response.data]))
       const link = document.createElement('a')

@@ -1244,3 +1244,53 @@ h1 {
     align-items: flex-start;
   }
 }
+
+/* ── Language Selector ── */
+.language-selector {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(139, 115, 85, 0.2);
+}
+
+.language-label {
+  display: block;
+  font-size: 0.95rem;
+  color: var(--ink);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.language-select {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 1rem;
+  border: 2px solid var(--muted);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.language-select:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.language-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(255, 128, 10, 0.1);
+}
+
+.language-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: rgba(247, 242, 233, 0.5);
+}
+
+.language-select option {
+  padding: 8px;
+  background: var(--paper);
+  color: var(--ink);
+}

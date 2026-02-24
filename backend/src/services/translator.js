@@ -112,14 +112,29 @@ async function translateChunk(text, targetLang, sourceLang) {
  * Traduz texto em lotes para melhor performance
  * @param {string} text - Texto completo para traduzir
  * @param {Function} progressCallback - Callback para reportar progresso
+ * @param {string} targetLang - Idioma de destino (padrão: 'pt')
  * @returns {Promise<string>} Texto traduzido
  */
-export async function translateTextWithProgress(text, progressCallback) {
+export async function translateTextWithProgress(text, progressCallback, targetLang = 'pt') {
   if (!text || text.trim().length === 0) {
     return text
   }
 
-  console.log('🌐 Iniciando tradução para pt-br...')
+  const langNames = {
+    pt: 'português',
+    en: 'inglês',
+    es: 'espanhol',
+    fr: 'francês',
+    de: 'alemão',
+    it: 'italiano',
+    ja: 'japonês',
+    zh: 'chinês',
+    ru: 'russo',
+    ar: 'árabe'
+  }
+  const langName = langNames[targetLang] || targetLang
+
+  console.log(`🌐 Iniciando tradução para ${langName} (${targetLang})...`)
   console.log('📝 Tamanho do texto:', text.length, 'caracteres')
 
   const MAX_CHUNK_SIZE = 4500
@@ -135,11 +150,11 @@ export async function translateTextWithProgress(text, progressCallback) {
     if (progressCallback) {
       progressCallback({
         type: 'log',
-        message: `Traduzindo ${i + 1}/${chunks.length} (${Math.round(((i + 1) / chunks.length) * 100)}%)`
+        message: `Traduzindo para ${langName} ${i + 1}/${chunks.length} (${Math.round(((i + 1) / chunks.length) * 100)}%)`
       })
     }
 
-    const translated = await translateChunk(chunk, 'pt', 'auto')
+    const translated = await translateChunk(chunk, targetLang, 'auto')
     translatedChunks.push(translated)
 
     // Pequeno delay para não sobrecarregar a API

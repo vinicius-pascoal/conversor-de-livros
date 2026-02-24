@@ -29,7 +29,7 @@ export default function ConversionOptions({
                 onChange={(e) => onTranslateChange(e.target.checked)}
                 disabled={isConverting}
               />
-              <span> Traduzir para pt-BR</span>
+              <span> Traduzir Livro</span>
             </label>
             <p className="translate-hint">Detecta e traduz automaticamente o texto</p>
           </div>

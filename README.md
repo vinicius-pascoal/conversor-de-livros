@@ -135,8 +135,9 @@ docker-compose down
 - ✅ **Inserção de imagens nas posições originais do documento**
 - ✅ **Upload opcional de capa personalizada**
 - ✅ **Capa automática usando primeira imagem extraída**
-- ✅ **Tradução automática para português pt-BR**
+- ✅ **Tradução automática com suporte a 27 idiomas**
 - ✅ **Detecção automática de idioma do documento**
+- ✅ **Seleção de idioma de destino** (pt-BR padrão)
 - ✅ **Progresso em tempo real com Server-Sent Events (SSE)**
 - ✅ Download automático do arquivo convertido
 - ✅ Interface responsiva e moderna
@@ -166,26 +167,29 @@ A rota `/api/convert` aceita os seguintes parâmetros via query string:
 
 - **`outputFormat`**: Formato de saída (padrão: `epub`)
   - `epub`: Gera livro digital em formato EPUB
-  - `pdf`: Gera novo PDF traduzido para pt-BR
+  - `pdf`: Gera novo PDF traduzido
 - **`mode`**: Modo de conversão (apenas para EPUB, padrão: `fast`)
   - `fast`: ⚡ **Rápido** - Um único capítulo, processamento mais rápido
   - `full`: 📖 **Completo** - Múltiplos capítulos com índice navegável
-- **`translate`**: Traduzir conteúdo para pt-BR (padrão: `false`)
+- **`translate`**: Traduzir conteúdo (padrão: `false`)
   - Obrigatório (sempre `true`) quando `outputFormat=pdf`
   - Opcional para `outputFormat=epub`
+- **`targetLang`**: Idioma de destino para tradução (padrão: `pt`)
+  - Códigos ISO 639-1 suportados: `pt`, `en`, `es`, `fr`, `de`, `it`, `ja`, `zh`, `ru`, `ar`, `hi`, `ko`, `nl`, `pl`, `sv`, `tr`, `vi`, `th`, `cs`, `da`, `fi`, `el`, `he`, `id`, `no`, `ro`, `uk`
+  - Português brasileiro (`pt`) é o idioma padrão
 - **`extractImages`**: Extrair e incluir imagens (padrão: `true`)
 - **`jobId`**: ID único para rastreamento em tempo real via SSE
 
 **Exemplos:**
 ```bash
-# EPUB completo com tradução
-POST http://localhost:3001/api/convert?outputFormat=epub&mode=full&translate=true
+# EPUB completo com tradução para espanhol
+POST http://localhost:3001/api/convert?outputFormat=epub&mode=full&translate=true&targetLang=es
 
-# PDF traduzido
-POST http://localhost:3001/api/convert?outputFormat=pdf
+# PDF traduzido para francês
+POST http://localhost:3001/api/convert?outputFormat=pdf&targetLang=fr
 
-# EPUB rápido sem tradução
-POST http://localhost:3001/api/convert?mode=fast&translate=false
+# EPUB rápido traduzido para pt-BR (padrão)
+POST http://localhost:3001/api/convert?mode=fast&translate=true
 ```
 
 ### Upload de Arquivos
@@ -195,6 +199,31 @@ A API aceita dois campos no formulário multipart:
 - **`cover`** (opcional): Imagem JPG/PNG para usar como capa do EPUB
 
 Se nenhuma capa for enviada e `keepImages=true`, a primeira imagem extraída do PDF será usada como capa automaticamente.
+
+### Idiomas Suportados para Tradução
+
+O conversor suporta tradução automática para **27 idiomas** diferentes:
+
+| Código | Idioma | Código | Idioma |
+|--------|--------|--------|--------|
+| `pt` | Português (BR) ⭐ | `en` | English |
+| `es` | Español | `fr` | Français |
+| `de` | Deutsch | `it` | Italiano |
+| `ja` | 日本語 | `zh` | 中文 |
+| `ru` | Русский | `ar` | العربية |
+| `hi` | हिन्दी | `ko` | 한국어 |
+| `nl` | Nederlands | `pl` | Polski |
+| `sv` | Svenska | `tr` | Türkçe |
+| `vi` | Tiếng Việt | `th` | ไทย |
+| `cs` | Čeština | `da` | Dansk |
+| `fi` | Suomi | `el` | Ελληνικά |
+| `he` | עברית | `id` | Bahasa Indonesia |
+| `no` | Norsk | `ro` | Română |
+| `uk` | Українська | | |
+
+⭐ **Português brasileiro (`pt`) é o idioma padrão**
+
+A detecção de idioma é automática - o sistema identifica o idioma do PDF original e, se for diferente do idioma de destino selecionado, realiza a tradução.
 
 ## 📦 Estrutura de Arquivos
 
@@ -366,32 +395,23 @@ Sinta-se à vontade para abrir issues e pull requests!
 ## 📋 TODO List
 
 ### 🔧 Melhorias em Desenvolvimento
-
-- [x] ~~**Tradutor automático de PDF**~~ ✅ **Implementado**
-  - ✅ Detecção automática de idioma do PDF
-  - ✅ Tradução automática para pt-BR durante conversão
   - ✅ Integração com Google Translate
   - ✅ Preservação de formatação e estrutura durante tradução
   - ✅ Toggle na interface para ativar/desativar tradução
   - ✅ Geração de PDF traduzido com layout preservado
+  - ✅ Seletor de idioma de destino (pt-BR padrão)
+  - ✅ Suporte a múltiplos idiomas de saída
+  - ✅ Geração de PDF traduzido com layout preservado
   - [ ] Cache de traduções para otimizar performance
-  - [ ] Suporte a múltiplos idiomas de saída (além de pt-BR)
-
-### 🎯 Roadmap Futuro
-
-- [x] ~~API REST documentada com Swagger~~ ✅ Implementado
-- [x] ~~Tradução automática para pt-BR~~ ✅ Implementado
+  - ✅ Suporte a múltiplos idiomas de saída (além de pt-BR)
+~~ ✅ Implementado
 - [x] ~~Geração de PDF traduzido~~ ✅ Implementado
 - [x] ~~Detecção automática de idioma~~ ✅ Implementado
 - [x] ~~Progresso em tempo real (SSE)~~ ✅ Implementado
+- [x] ~~Suporte a múltiplos idiomas de tradução~~ ✅ Implementado (27 idiomas)
 - [ ] Suporte a outros formatos de entrada (DOCX, TXT, MOBI)
 - [ ] Editor EPUB integrado para ajustes pós-conversão
 - [ ] Prévia do EPUB antes do download
-- [ ] Histórico de conversões
-- [ ] Testes automatizados (unit + integration)
-- [ ] CI/CD com GitHub Actions
-- [ ] Suporte a múltiplos idiomas de tradução (além de pt-BR)
-
 
 ## 📄 Licença
 

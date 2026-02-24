@@ -27,11 +27,12 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     let coverPath = options.coverPath || null
     const keepImages = options.keepImages !== false
     const translateToPt = options.translate === true
+    const targetLang = options.targetLang || 'pt'
     const progress = typeof options.progress === 'function' ? options.progress : null
 
     console.log('🔄 Iniciando conversão PDF para EPUB (Modo Reflow)...')
     console.log('⚡ fastMode:', fastMode)
-    console.log('🌐 translate:', translateToPt)
+    console.log('🌐 translate:', translateToPt, '| targetLang:', targetLang)
     console.time('pdf-total')
     progress?.({ type: 'log', message: 'Iniciando conversão' })
 
@@ -88,7 +89,8 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
       progress,
       dataBuffer,
       detectedLang,
-      translateToPt // Passa explicitamente
+      translateToPt, // Passa explicitamente
+      targetLang // Passa idioma de destino
     })
 
   } catch (error) {
@@ -102,9 +104,11 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
 /**
  * Traduz conteúdo HTML preservando todas as tags e estrutura
  * Traduz texto em lotes para evitar rate limiting
+ * @param {string} html - HTML para traduzir
+ * @param {string} targetLang - Idioma de destino (padrão: 'pt')
  */
-async function translateHtmlContent(html) {
-  console.log(`  🔄 Iniciando tradução do capítulo (${html.length} chars)...`)
+async function translateHtmlContent(html, targetLang = 'pt') {
+  console.log(`  🔄 Iniciando tradução do capítulo (${html.length} chars) para ${targetLang}...`)
 
   // Protege blocos que não devem ser alterados
   const protectedBlocks = []
@@ -176,7 +180,7 @@ async function translateHtmlContent(html) {
     }
 
     try {
-      const translated = await translateText(item.textOnly)
+      const translated = await translateText(item.textOnly, targetLang)
       item.translated = translated
 
       // Pausa breve para evitar rate limiting (50ms entre traduções)
@@ -530,7 +534,7 @@ function escapeRegex(str) {
 }
 
 async function convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilename, options) {
-  const { fastMode, text, pdfData, title, coverPath, progress, translateToPt, dataBuffer, detectedLang, keepImages } = options
+  const { fastMode, text, pdfData, title, coverPath, progress, translateToPt, dataBuffer, detectedLang, keepImages, targetLang = 'pt' } = options
 
   console.time('layout-analysis')
   progress?.({ type: 'phase', phase: 'extracting' })
@@ -596,7 +600,7 @@ async function convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilenam
         const originalLength = chapter.data.length
         const originalImages = (chapter.data.match(/<figure|<img/gi) || []).length
 
-        chapter.data = await translateHtmlContent(chapter.data)
+        chapter.data = await translateHtmlContent(chapter.data, targetLang)
 
         const newLength = chapter.data.length
         const newImages = (chapter.data.match(/<figure|<img/gi) || []).length

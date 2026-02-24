@@ -9,6 +9,7 @@ import { generatePdfWithLayout } from '../services/pdfGeneratorWithLayout.js'
 import { translateTextWithProgress, detectLanguage } from '../services/translator.js'
 import pdfParse from 'pdf-parse'
 import { emitProgress, completeProgress } from '../services/progress.js'
+import { SUPPORTED_LANGUAGES, DEFAULT_TARGET_LANGUAGE, isLanguageSupported } from '../constants/languages.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -203,9 +204,16 @@ router.post('/convert', (req, res, next) => {
     const translate = req.query.translate
       ? ['true', '1', 'yes', 'on'].includes(String(req.query.translate).toLowerCase())
       : false
+    const targetLang = req.query.targetLang ? String(req.query.targetLang) : DEFAULT_TARGET_LANGUAGE
+
+    // Valida idioma de destino
+    if (!isLanguageSupported(targetLang)) {
+      console.log('⚠️ [CONVERT] Idioma não suportado:', targetLang, '- usando padrão:', DEFAULT_TARGET_LANGUAGE)
+    }
+    const validatedTargetLang = isLanguageSupported(targetLang) ? targetLang : DEFAULT_TARGET_LANGUAGE
 
     console.log('📄 [CONVERT] Arquivo recebido:', pdfFile.originalname, 'tamanho:', pdfFile.size, 'bytes')
-    console.log('📄 [CONVERT] Configuração: outputFormat=%s, fastMode=%s, keepImages=%s, extractImages=%s, translate=%s', outputFormat, fastMode, keepImages, extractImages, translate)
+    console.log('📄 [CONVERT] Configuração: outputFormat=%s, fastMode=%s, keepImages=%s, extractImages=%s, translate=%s, targetLang=%s', outputFormat, fastMode, keepImages, extractImages, translate, validatedTargetLang)
     if (jobId) {
       console.log('📡 [CONVERT] Emitindo progresso para jobId:', jobId)
       emitProgress(jobId, { type: 'log', message: `Arquivo recebido: ${pdfFile.originalname}` })
@@ -238,9 +246,10 @@ router.post('/convert', (req, res, next) => {
         console.log('🌍 Idioma detectado:', detectedLang)
         progressFn?.({ type: 'log', message: `Idioma detectado: ${detectedLang}` })
 
-        if (detectedLang === 'pt') {
-          console.log('ℹ️ Texto já está em português, desabilitando tradução')
-          progressFn?.({ type: 'log', message: 'Texto já está em português' })
+        // Verifica se o texto já está no idioma de destino
+        if (detectedLang === validatedTargetLang) {
+          console.log(`ℹ️ Texto já está em ${validatedTargetLang}, desabilitando tradução`)
+          progressFn?.({ type: 'log', message: `Texto já está no idioma de destino (${validatedTargetLang})` })
           shouldTranslate = false
         }
       }
@@ -253,13 +262,14 @@ router.post('/convert', (req, res, next) => {
         outputPath: outputPdfPath,
         title,
         translate: shouldTranslate,
-        targetLang: 'pt',
+        targetLang: validatedTargetLang,
         progress: progressFn
       })
 
       console.log('✅ PDF traduzido gerado:', outputPdfPath)
 
-      const downloadName = pdfFile.originalname.replace('.pdf', '') + '_pt-br.pdf'
+      const langSuffix = validatedTargetLang === 'pt' ? '_pt-br' : `_${validatedTargetLang}`
+      const downloadName = pdfFile.originalname.replace('.pdf', '') + langSuffix + '.pdf'
       res.download(outputPdfPath, downloadName, (err) => {
         fs.unlink(pdfPath, () => { })
         fs.unlink(outputPdfPath, () => { })
@@ -290,6 +300,7 @@ router.post('/convert', (req, res, next) => {
       coverPath,
       keepImages: extractImages, // usa extractImages como keepImages
       translate,
+      targetLang: validatedTargetLang,
       progress: jobId ? (evt) => emitProgress(jobId, evt) : null
     })
     console.log('⬅️ Retorno convertPdfToEpub')

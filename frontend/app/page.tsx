@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import type { ConversionMode, OutputFormat } from './types'
+import { DEFAULT_TARGET_LANGUAGE } from './constants/languages'
 import { useFileUpload } from './hooks/useFileUpload'
 import { useProgress } from './hooks/useProgress'
 import { useConversion } from './hooks/useConversion'
@@ -9,6 +10,7 @@ import MessageAlert from './components/MessageAlert'
 import FileUpload from './components/FileUpload'
 import FormatSelector from './components/FormatSelector'
 import ConversionOptions from './components/ConversionOptions'
+import LanguageSelector from './components/LanguageSelector'
 import CoverUpload from './components/CoverUpload'
 import ProgressViewer from './components/ProgressViewer'
 import ConvertButton from './components/ConvertButton'
@@ -18,6 +20,7 @@ export default function Home() {
   const [conversionMode, setConversionMode] = useState<ConversionMode>('fast')
   const [translateToPt, setTranslateToPt] = useState(false)
   const [extractImages, setExtractImages] = useState(true)
+  const [targetLang, setTargetLang] = useState<string>(DEFAULT_TARGET_LANGUAGE)
 
   // Custom hooks para gerenciar estado e lógica
   const fileUpload = useFileUpload()
@@ -30,6 +33,7 @@ export default function Home() {
     conversionMode,
     translateToPt,
     extractImages,
+    targetLang,
     setConversionPhase: progress.setConversionPhase,
     setProgressLog: progress.setProgressLog,
     setUploadPercent: progress.setUploadPercent,
@@ -91,6 +95,14 @@ export default function Home() {
             onTranslateChange={setTranslateToPt}
             onExtractImagesChange={setExtractImages}
           />
+          {translateToPt && (
+            <LanguageSelector
+              selectedLang={targetLang}
+              onLanguageChange={setTargetLang}
+              disabled={isConverting}
+            />
+          )}
+
 
           <div className="secondary-title-box">
             <img src="/album-svgrepo-com.svg" alt="Capa" className="icon-title" />
