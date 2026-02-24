@@ -380,11 +380,21 @@ export default function Home() {
               <div className="mode-selector">
                 <label>Modo de conversão:</label>
                 <div className="mode-options">
-                  <button className={`mode-btn ${conversionMode === 'fast' ? 'active' : ''}`} onClick={() => setConversionMode('fast')} disabled={isConverting} title="Um capítulo único, mais rápido">
-                    Rápido
+                  <button
+                    className={`mode-btn ${conversionMode === 'fast' ? 'active' : ''}`}
+                    onClick={() => setConversionMode('fast')}
+                    disabled={isConverting}
+                  >
+                    <div className="mode-btn-header">⚡ Rápido</div>
+                    <div className="mode-btn-desc">Um único capítulo, processamento mais rápido</div>
                   </button>
-                  <button className={`mode-btn ${conversionMode === 'full' ? 'active' : ''}`} onClick={() => setConversionMode('full')} disabled={isConverting} title="Múltiplos capítulos">
-                    Completo
+                  <button
+                    className={`mode-btn ${conversionMode === 'full' ? 'active' : ''}`}
+                    onClick={() => setConversionMode('full')}
+                    disabled={isConverting}
+                  >
+                    <div className="mode-btn-header">📖 Completo</div>
+                    <div className="mode-btn-desc">Múltiplos capítulos com índice navegável</div>
                   </button>
                 </div>
               </div>
