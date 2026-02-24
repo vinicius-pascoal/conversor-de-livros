@@ -8,7 +8,7 @@ import Epub from 'epub-gen'
 import { translateText, translateTextWithProgress, detectLanguage } from './translator.js'
 import { renderPdfPagesToSvg, renderPdfPagesWithoutText, translatePagesText } from './pdfRenderer.js'
 import { generateFixedLayoutEpub } from './fixedLayoutEpub.js'
-import { analyzePdfLayout, reconstructChapters } from './layoutAnalyzer.js'
+import { analyzePdfLayout, analyzePdfLayoutWithParagraphs, reconstructChapters } from './layoutAnalyzer.js'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { createCanvas } from 'canvas'
 
@@ -385,8 +385,8 @@ function integrateImagesIntoChapters(chapters, images, pageLayouts) {
         if (a.pageNum && b.pageNum && a.pageNum !== b.pageNum) {
           return a.pageNum - b.pageNum
         }
-        // Depois por Y (decrescente = topo para baixo)
-        return b.yMid - a.yMid
+        // Depois por Y (ASCENDENTE = topo para baixo após inversão de coordenadas)
+        return a.yMid - b.yMid
       })
 
       const newHtml = allElements.map(el => {
@@ -437,8 +437,8 @@ function integrateImagesIntoChapters(chapters, images, pageLayouts) {
 
     for (const pageNum of sortedPages) {
       const pageElements = elementsByPage.get(pageNum)
-      // Ordena elementos da página por Y (decrescente = topo para baixo)
-      pageElements.sort((a, b) => b.yMid - a.yMid)
+      // Ordena elementos da página por Y (ASCENDENTE = topo para baixo após inversão)
+      pageElements.sort((a, b) => a.yMid - b.yMid)
       orderedElements.push(...pageElements)
     }
 
@@ -612,8 +612,9 @@ async function convertPdfToEpubReflowEnhanced(pdfPath, epubPath, originalFilenam
   progress?.({ type: 'phase', phase: 'extracting' })
   progress?.({ type: 'log', message: 'Analisando estrutura de layout do PDF...' })
 
-  // Analisa layout do PDF
-  const layoutAnalysis = await analyzePdfLayout(dataBuffer)
+  // NOVA LÓGICA: Usa detecção precisa de parágrafos baseada em características do PDF
+  console.log('🔍 Usando NOVA LÓGICA de detecção de parágrafos')
+  const layoutAnalysis = await analyzePdfLayoutWithParagraphs(dataBuffer)
   console.log(`📐 Layout analisado: ${layoutAnalysis.totalPages} páginas`)
   progress?.({ type: 'log', message: `${layoutAnalysis.totalPages} páginas analisadas` })
   console.timeEnd('layout-analysis')
