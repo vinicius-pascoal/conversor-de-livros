@@ -5,7 +5,7 @@ import type { ConversionMode, OutputFormat } from './types'
 import { DEFAULT_TARGET_LANGUAGE } from './constants/languages'
 import { useFileUpload } from './hooks/useFileUpload'
 import { useProgress } from './hooks/useProgress'
-import { useConversion } from './hooks/useConversion'
+import { useConversion, ConversionResult } from './hooks/useConversion'
 import MessageAlert from './components/MessageAlert'
 import FileUpload from './components/FileUpload'
 import FormatSelector from './components/FormatSelector'
@@ -14,6 +14,7 @@ import LanguageSelector from './components/LanguageSelector'
 import CoverUpload from './components/CoverUpload'
 import ProgressViewer from './components/ProgressViewer'
 import ConvertButton from './components/ConvertButton'
+import EpubPreview from './components/EpubPreview'
 
 export default function Home() {
   const [outputFormat, setOutputFormat] = useState<OutputFormat>('epub')
@@ -21,6 +22,7 @@ export default function Home() {
   const [translateToPt, setTranslateToPt] = useState(false)
   const [extractImages, setExtractImages] = useState(true)
   const [targetLang, setTargetLang] = useState<string>(DEFAULT_TARGET_LANGUAGE)
+  const [previewData, setPreviewData] = useState<ConversionResult | null>(null)
 
   // Custom hooks para gerenciar estado e lógica
   const fileUpload = useFileUpload()
@@ -40,6 +42,39 @@ export default function Home() {
     setMessage: fileUpload.setMessage,
     resetProgress: progress.resetProgress
   })
+
+  const handleConvertClick = async () => {
+    const result = await handleConvert()
+    if (result) {
+      // Se for EPUB, mostra preview; se for PDF, faz download direto
+      if (result.outputFormat === 'epub') {
+        setPreviewData(result)
+      } else {
+        downloadFile(result.blob, result.fileName)
+      }
+    }
+  }
+
+  const downloadFile = (blob: Blob, fileName: string) => {
+    const blobUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.setAttribute('download', fileName)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(blobUrl)
+  }
+
+  const handleDownloadPreview = () => {
+    if (previewData) {
+      downloadFile(previewData.blob, previewData.fileName)
+    }
+  }
+
+  const handleClosePreview = () => {
+    setPreviewData(null)
+  }
 
   const handleOutputFormat = (fmt: OutputFormat) => {
     setOutputFormat(fmt)
@@ -126,8 +161,17 @@ export default function Home() {
         selectedFile={fileUpload.selectedFile}
         isConverting={isConverting}
         outputFormat={outputFormat}
-        onConvert={handleConvert}
+        onConvert={handleConvertClick}
       />
+
+      {previewData && (
+        <EpubPreview
+          epubBlob={previewData.blob}
+          fileName={previewData.fileName}
+          onClose={handleClosePreview}
+          onDownload={handleDownloadPreview}
+        />
+      )}
     </div>
   )
 }

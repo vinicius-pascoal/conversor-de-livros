@@ -18,12 +18,18 @@ interface UseConversionOptions {
   resetProgress: () => void
 }
 
+export interface ConversionResult {
+  blob: Blob
+  fileName: string
+  outputFormat: OutputFormat
+}
+
 export function useConversion(options: UseConversionOptions) {
   const [isConverting, setIsConverting] = useState(false)
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
 
-  const handleConvert = async () => {
+  const handleConvert = async (): Promise<ConversionResult | null> => {
     const {
       selectedFile,
       coverFile,
@@ -39,7 +45,7 @@ export function useConversion(options: UseConversionOptions) {
       resetProgress
     } = options
 
-    if (!selectedFile) return
+    if (!selectedFile) return null
 
     setIsConverting(true)
     setMessage(null)
@@ -93,32 +99,31 @@ export function useConversion(options: UseConversionOptions) {
       const langSuffix = targetLang === 'pt' ? '_pt-br' : `_${targetLang}`
       const downloadName = isPdfMode ? `${baseName}${langSuffix}.pdf` : `${baseName}.epub`
 
-      const blobUrl = window.URL.createObjectURL(new Blob([response.data]))
-      const link = document.createElement('a')
-      link.href = blobUrl
-      link.setAttribute('download', downloadName)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-
       setConversionPhase('complete')
       setMessage({
         type: 'success',
         text: isPdfMode
-          ? 'PDF traduzido gerado! O download começará automaticamente.'
-          : 'EPUB gerado! O download começará automaticamente.'
+          ? 'PDF traduzido gerado com sucesso!'
+          : 'EPUB gerado com sucesso!'
       })
       setProgressLog((prev) => [...prev, 'Concluído com sucesso'])
 
       setTimeout(() => {
         setIsConverting(false)
-      }, 2000)
+      }, 500)
+
+      return {
+        blob: new Blob([response.data]),
+        fileName: downloadName,
+        outputFormat
+      }
     } catch (error) {
       console.error('Erro na conversão:', error)
       setConversionPhase('idle')
       setIsConverting(false)
       setMessage({ type: 'error', text: 'Erro ao converter o arquivo. Por favor, tente novamente.' })
       setProgressLog((prev) => [...prev, 'Erro na conversão'])
+      return null
     }
   }
 

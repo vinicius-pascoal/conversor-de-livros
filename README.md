@@ -138,6 +138,7 @@ docker-compose down
 - ✅ **Tradução automática com suporte a 27 idiomas**
 - ✅ **Detecção automática de idioma do documento**
 - ✅ **Seleção de idioma de destino** (pt-BR padrão)
+- ✅ **Prévia interativa do EPUB antes do download**
 - ✅ **Progresso em tempo real com Server-Sent Events (SSE)**
 - ✅ Download automático do arquivo convertido
 - ✅ Interface responsiva e moderna
@@ -276,6 +277,21 @@ O sistema usa `pdfjs-dist` para extrair imagens com informações de posição:
 
 Isso garante que as imagens apareçam aproximadamente nas mesmas posições do PDF original.
 
+### Prévia do EPUB
+
+Após a conversão para EPUB, o sistema oferece uma prévia interativa antes do download:
+
+- **Renderização no navegador**: Usa a biblioteca `epub.js` para renderizar o conteúdo diretamente
+- **Navegação por páginas**: Botões e teclas de seta (← →) para navegar
+- **Visualização em tela cheia**: Interface imersiva com fundo escuro
+- **Controles intuitivos**:
+  - Contador de páginas atual/total
+  - Botão de download quando estiver satisfeito com o resultado
+  - Tecla ESC para fechar a prévia
+- **Automático para EPUB, direto para PDF**: PDFs traduzidos são baixados diretamente (sem prévia)
+
+Isso permite que você verifique a qualidade da conversão, formatação do texto e posicionamento de imagens antes de fazer o download final.
+
 ## 🐳 Docker
 
 ### Arquitetura
@@ -409,9 +425,9 @@ Sinta-se à vontade para abrir issues e pull requests!
 - [x] ~~Detecção automática de idioma~~ ✅ Implementado
 - [x] ~~Progresso em tempo real (SSE)~~ ✅ Implementado
 - [x] ~~Suporte a múltiplos idiomas de tradução~~ ✅ Implementado (27 idiomas)
+- [x] ~~Prévia do EPUB antes do download~~ ✅ Implementado
 - [ ] Suporte a outros formatos de entrada (DOCX, TXT, MOBI)
 - [ ] Editor EPUB integrado para ajustes pós-conversão
-- [ ] Prévia do EPUB antes do download
 
 ## 📄 Licença
 
