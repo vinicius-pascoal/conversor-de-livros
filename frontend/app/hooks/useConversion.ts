@@ -1,0 +1,124 @@
+import { useState } from 'react'
+import axios from 'axios'
+import type { ConversionMode, OutputFormat, ConversionPhase, MessageData } from '../types'
+
+interface UseConversionOptions {
+  selectedFile: File | null
+  coverFile: File | null
+  outputFormat: OutputFormat
+  conversionMode: ConversionMode
+  translateToPt: boolean
+  extractImages: boolean
+  setConversionPhase: (phase: ConversionPhase) => void
+  setProgressLog: React.Dispatch<React.SetStateAction<string[]>>
+  setUploadPercent: (percent: number) => void
+  setMessage: (message: MessageData | null) => void
+  resetProgress: () => void
+}
+
+export function useConversion(options: UseConversionOptions) {
+  const [isConverting, setIsConverting] = useState(false)
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+
+  const handleConvert = async () => {
+    const {
+      selectedFile,
+      coverFile,
+      outputFormat,
+      conversionMode,
+      translateToPt,
+      extractImages,
+      setConversionPhase,
+      setProgressLog,
+      setUploadPercent,
+      setMessage,
+      resetProgress
+    } = options
+
+    if (!selectedFile) return
+
+    setIsConverting(true)
+    setMessage(null)
+    setConversionPhase('uploading')
+    resetProgress()
+    setConversionPhase('uploading')
+
+    const formData = new FormData()
+    formData.append('pdf', selectedFile)
+    if (coverFile) formData.append('cover', coverFile)
+
+    try {
+      const jobId =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? (crypto as any).randomUUID()
+          : String(Date.now())
+
+      const es = new EventSource(`${apiUrl}/api/progress/${jobId}`)
+      es.onerror = () => { }
+      es.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data)
+          if (data.type === 'phase') setConversionPhase(data.phase as ConversionPhase)
+          else if (data.type === 'log') setProgressLog((prev) => [...prev, data.message])
+          else if (data.type === 'done') es.close()
+        } catch (_) { }
+      }
+
+      const isPdfMode = outputFormat === 'pdf'
+      const shouldTranslate = isPdfMode ? true : translateToPt
+
+      const url =
+        `${apiUrl}/api/convert` +
+        `?mode=${conversionMode}` +
+        `&jobId=${jobId}` +
+        `&translate=${shouldTranslate}` +
+        `&extractImages=${extractImages}` +
+        `&outputFormat=${outputFormat}`
+
+      const response = await axios.post(url, formData, {
+        responseType: 'blob',
+        onUploadProgress: (e) => {
+          if (e.total) setUploadPercent(Math.round((e.loaded / e.total) * 100))
+        }
+      })
+
+      es.close()
+
+      const baseName = selectedFile.name.replace('.pdf', '')
+      const downloadName = isPdfMode ? `${baseName}_pt-br.pdf` : `${baseName}.epub`
+
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.setAttribute('download', downloadName)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+
+      setConversionPhase('complete')
+      setMessage({
+        type: 'success',
+        text: isPdfMode
+          ? 'PDF traduzido gerado! O download começará automaticamente.'
+          : 'EPUB gerado! O download começará automaticamente.'
+      })
+      setProgressLog((prev) => [...prev, 'Concluído com sucesso'])
+
+      setTimeout(() => {
+        setIsConverting(false)
+      }, 2000)
+    } catch (error) {
+      console.error('Erro na conversão:', error)
+      setConversionPhase('idle')
+      setIsConverting(false)
+      setMessage({ type: 'error', text: 'Erro ao converter o arquivo. Por favor, tente novamente.' })
+      setProgressLog((prev) => [...prev, 'Erro na conversão'])
+    }
+  }
+
+  return {
+    isConverting,
+    handleConvert
+  }
+}
