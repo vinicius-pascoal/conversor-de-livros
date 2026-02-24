@@ -100,23 +100,23 @@ export default function ProgressViewer({
             <div className="progress-text">{currentPhaseLabel}</div>
           </div>
           {progressLog.length > 0 && (
-          <div className="progress-logs-container">
-            <div className="progress-logs-header">
-              <span className="logs-title">📋 Log de Atividades</span>
-              <span className="logs-count">{progressLog.length} mensagens</span>
+            <div className="progress-logs-container">
+              <div className="progress-logs-header">
+                <span className="logs-title">📋 Log de Atividades</span>
+                <span className="logs-count">{progressLog.length} mensagens</span>
+              </div>
+              <div className="progress-logs">
+                {progressLog.map((l, idx) => (
+                  <div key={idx} className="progress-log-item">
+                    <span className="log-icon">{getLogIcon(l)}</span>
+                    <span className="log-text">{l}</span>
+                    <span className="log-time">{new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                  </div>
+                ))}
+                <div ref={logEndRef} />
+              </div>
             </div>
-            <div className="progress-logs">
-              {progressLog.map((l, idx) => (
-                <div key={idx} className="progress-log-item">
-                  <span className="log-icon">{getLogIcon(l)}</span>
-                  <span className="log-text">{l}</span>
-                  <span className="log-time">{new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                </div>
-              ))}
-              <div ref={logEndRef} />
-            </div>
-          </div>
-        )}
+          )}
         </div>
       </div>
     </div>
