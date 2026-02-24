@@ -33,7 +33,7 @@ const router = express.Router()
  *                   description: Tipo de evento
  *                 phase:
  *                   type: string
- *                   enum: [uploading, extracting, processing, generating, complete]
+ *                   enum: [uploading, extracting, processing, translating, generating, complete]
  *                   description: Fase da conversão (apenas para type=phase)
  *                 message:
  *                   type: string

@@ -54,12 +54,32 @@ const upload = multer({
  *   post:
  *     tags:
  *       - Conversão
- *     summary: Converte um arquivo PDF para EPUB
- *     description: Converte um arquivo PDF para o formato EPUB com opções de tradução, modo rápido e cover opcional
+ *     summary: Converte um arquivo PDF para EPUB ou PDF traduzido
+ *     description: |
+ *       Converte um arquivo PDF para o formato EPUB ou gera um PDF traduzido.
+ *       
+ *       **Modos de Conversão (para EPUB):**
+ *       - **Rápido**: Um único capítulo, processamento mais rápido
+ *       - **Completo**: Múltiplos capítulos com índice navegável
+ *       
+ *       **Formatos de Saída:**
+ *       - **EPUB**: Livro digital com opção de tradução
+ *       - **PDF**: Gera um novo PDF traduzido para pt-BR (sempre com tradução)
  *     parameters:
+ *       - name: outputFormat
+ *         in: query
+ *         description: Formato de saída - 'epub' para livro digital ou 'pdf' para PDF traduzido
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [epub, pdf]
+ *           default: epub
  *       - name: mode
  *         in: query
- *         description: Modo de conversão - 'fast' para conversão rápida ou 'full' para completa
+ *         description: |
+ *           Modo de conversão (apenas para EPUB):
+ *           - **fast**: Um único capítulo, processamento mais rápido
+ *           - **full**: Múltiplos capítulos com índice navegável
  *         required: false
  *         schema:
  *           type: string
@@ -67,21 +87,21 @@ const upload = multer({
  *           default: fast
  *       - name: translate
  *         in: query
- *         description: Traduzir o conteúdo para português (pt-br)
+ *         description: Traduzir o conteúdo para português pt-BR (obrigatório para outputFormat=pdf, opcional para epub)
  *         required: false
  *         schema:
  *           type: boolean
  *           default: false
- *       - name: useFixedLayout
+ *       - name: extractImages
  *         in: query
- *         description: Usar Fixed Layout EPUB (preserva layout original) ou Reflow (texto fluido)
+ *         description: Extrair e incluir imagens do PDF no resultado
  *         required: false
  *         schema:
  *           type: boolean
  *           default: true
  *       - name: jobId
  *         in: query
- *         description: ID único da tarefa para rastreamento de progresso (SSE)
+ *         description: ID único da tarefa para rastreamento de progresso em tempo real via SSE
  *         required: false
  *         schema:
  *           type: string
@@ -104,18 +124,28 @@ const upload = multer({
  *               - pdf
  *     responses:
  *       200:
- *         description: EPUB gerado com sucesso
+ *         description: Arquivo gerado com sucesso (EPUB ou PDF traduzido)
  *         content:
  *           application/octet-stream:
  *             schema:
  *               type: string
  *               format: binary
  *       400:
- *         description: Erro na requisição (arquivo inválido ou ausente)
+ *         description: Erro na requisição (arquivo inválido, ausente ou tamanho excedido)
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
+ *             examples:
+ *               noFile:
+ *                 summary: Nenhum arquivo enviado
+ *                 value:
+ *                   error: "Nenhum arquivo foi enviado"
+ *               invalidType:
+ *                 summary: Tipo de arquivo inválido
+ *                 value:
+ *                   error: "Erro no upload do arquivo"
+ *                   message: "Apenas arquivos PDF ou imagens são permitidos (para capa)."
  *       500:
  *         description: Erro ao processar a conversão
  *         content:
