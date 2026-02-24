@@ -69,35 +69,37 @@ export default function ProgressViewer({
   const currentPhaseLabel = phaseLabels[conversionPhase]
 
   return (
-    <div className="card progress-card">
-      <div className="progress-header">
-        <h2 className="card-title">📊 Progresso da Conversão</h2>
-        <div className="progress-percentage">{progressPercent}%</div>
-      </div>
-      <div className="conversion-progress">
-        <div className="progress-phases">
-          {phaseSteps.map((phase, idx) => {
-            const currentIdx = phaseSteps.indexOf(conversionPhase as any)
-            const isActive = currentIdx >= idx || conversionPhase === 'complete'
-            const isCurrent = currentIdx === idx
-            return (
-              <div key={phase} className={`phase ${isActive ? 'active' : ''} ${isCurrent ? 'current' : ''}`}>
-                <div className="phase-icon">{phaseIcons[phase]}</div>
-                <div className="phase-label">{phaseNames[phase]}</div>
-              </div>
-            )
-          })}
+    <div className="progress-modal-overlay">
+      <div className="progress-modal-container">
+        <div className="progress-modal-header">
+          <h2 className="progress-modal-title">📊 Progresso da Conversão</h2>
+          <div className="progress-percentage">{progressPercent}%</div>
         </div>
-        <div className="progress-bar-container">
-          <div className="progress-bar" style={{ width: `${progressPercent}%` }}>
-            <div className="progress-bar-shine"></div>
+
+        <div className="conversion-progress">
+          <div className="progress-phases">
+            {phaseSteps.map((phase, idx) => {
+              const currentIdx = phaseSteps.indexOf(conversionPhase as any)
+              const isActive = currentIdx >= idx || conversionPhase === 'complete'
+              const isCurrent = currentIdx === idx
+              return (
+                <div key={phase} className={`phase ${isActive ? 'active' : ''} ${isCurrent ? 'current' : ''}`}>
+                  <div className="phase-icon">{phaseIcons[phase]}</div>
+                  <div className="phase-label">{phaseNames[phase]}</div>
+                </div>
+              )
+            })}
           </div>
-        </div>
-        <div className="progress-info">
-          <div className="progress-icon">{conversionPhase === 'complete' ? '🎉' : '⏳'}</div>
-          <div className="progress-text">{currentPhaseLabel}</div>
-        </div>
-        {progressLog.length > 0 && (
+          <div className="progress-bar-container">
+            <div className="progress-bar" style={{ width: `${progressPercent}%` }}>
+              <div className="progress-bar-shine"></div>
+            </div>
+          </div>
+          <div className="progress-info">
+            <div className="progress-icon">{conversionPhase === 'complete' ? '🎉' : '⏳'}</div>
+            <div className="progress-text">{currentPhaseLabel}</div>
+          </div>
+          {progressLog.length > 0 && (
           <div className="progress-logs-container">
             <div className="progress-logs-header">
               <span className="logs-title">📋 Log de Atividades</span>
@@ -115,6 +117,7 @@ export default function ProgressViewer({
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   )
