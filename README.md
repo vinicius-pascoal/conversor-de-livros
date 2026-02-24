@@ -418,7 +418,6 @@ Sinta-se à vontade para abrir issues e pull requests!
   - ✅ Seletor de idioma de destino (pt-BR padrão)
   - ✅ Suporte a múltiplos idiomas de saída
   - ✅ Geração de PDF traduzido com layout preservado
-  - [ ] Cache de traduções para otimizar performance
   - ✅ Suporte a múltiplos idiomas de saída (além de pt-BR)
 ~~ ✅ Implementado
 - [x] ~~Geração de PDF traduzido~~ ✅ Implementado
@@ -427,7 +426,6 @@ Sinta-se à vontade para abrir issues e pull requests!
 - [x] ~~Suporte a múltiplos idiomas de tradução~~ ✅ Implementado (27 idiomas)
 - [x] ~~Prévia do EPUB antes do download~~ ✅ Implementado
 - [ ] Suporte a outros formatos de entrada (DOCX, TXT, MOBI)
-- [ ] Editor EPUB integrado para ajustes pós-conversão
 
 ## 📄 Licença
 
