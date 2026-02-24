@@ -4,7 +4,6 @@ import { useState, useRef } from 'react'
 import axios from 'axios'
 
 type ConversionMode = 'fast' | 'full'
-type EpubType = 'fixed' | 'reflow'
 type OutputFormat = 'epub' | 'pdf'
 type ConversionPhase = 'idle' | 'uploading' | 'extracting' | 'processing' | 'translating' | 'generating' | 'complete'
 
@@ -13,7 +12,6 @@ export default function Home() {
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [outputFormat, setOutputFormat] = useState<OutputFormat>('epub')
   const [conversionMode, setConversionMode] = useState<ConversionMode>('fast')
-  const [epubType, setEpubType] = useState<EpubType>('reflow')
   const [translateToPt, setTranslateToPt] = useState(false)
   const [extractImages, setExtractImages] = useState(true)
   const [isConverting, setIsConverting] = useState(false)
@@ -97,14 +95,12 @@ export default function Home() {
 
       const isPdfMode = outputFormat === 'pdf'
       const shouldTranslate = isPdfMode ? true : translateToPt
-      const useFixedLayout = epubType === 'fixed'
 
       const url =
         `${apiUrl}/api/convert` +
         `?mode=${conversionMode}` +
         `&jobId=${jobId}` +
         `&translate=${shouldTranslate}` +
-        `&useFixedLayout=${useFixedLayout}` +
         `&extractImages=${extractImages}` +
         `&outputFormat=${outputFormat}`
 
@@ -334,19 +330,6 @@ export default function Home() {
                   </button>
                 </div>
               </div>
-
-              <div className="mode-selector">
-                <label>Tipo de EPUB:</label>
-                <div className="mode-options">
-                  <button className={`mode-btn ${epubType === 'fixed' ? 'active' : ''}`} onClick={() => setEpubType('fixed')} disabled={isConverting} title="Preserva o design original">
-                    Fixed Layout
-                  </button>
-                  <button className={`mode-btn ${epubType === 'reflow' ? 'active' : ''}`} onClick={() => setEpubType('reflow')} disabled={isConverting} title="Texto fluido, ideal para Kindle">
-                    Reflow
-                  </button>
-                </div>
-              </div>
-              <p className="translate-hint">Reflow recomendado para Kindle; Fixed Layout preserva o design.</p>
             </>
           )}
         </div>

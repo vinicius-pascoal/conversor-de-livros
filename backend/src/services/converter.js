@@ -6,8 +6,7 @@ import { promisify } from 'util'
 import pdfParse from 'pdf-parse'
 import Epub from 'epub-gen'
 import { translateText, translateTextWithProgress, detectLanguage } from './translator.js'
-import { renderPdfPagesToSvg, renderPdfPagesWithoutText, translatePagesText } from './pdfRenderer.js'
-import { generateFixedLayoutEpub } from './fixedLayoutEpub.js'
+import { renderPdfPagesToSvg } from './pdfRenderer.js'
 import { analyzePdfLayout, analyzePdfLayoutWithParagraphs, reconstructChapters } from './layoutAnalyzer.js'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { createCanvas } from 'canvas'
@@ -31,12 +30,10 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
     let coverPath = options.coverPath || null
     const keepImages = options.keepImages !== false
     const translateToPt = options.translate === true
-    let useFixedLayout = options.useFixedLayout === true // Reflow é o padrão
     const progress = typeof options.progress === 'function' ? options.progress : null
 
-    console.log('🔄 Iniciando conversão PDF para EPUB...')
+    console.log('🔄 Iniciando conversão PDF para EPUB (Modo Reflow)...')
     console.log('⚡ fastMode:', fastMode)
-    console.log('🖼️ useFixedLayout:', useFixedLayout)
     console.log('🌐 translate:', translateToPt)
     console.time('pdf-total')
     progress?.({ type: 'log', message: 'Iniciando conversão' })
@@ -79,76 +76,6 @@ export async function convertPdfToEpub(pdfPath, epubPath, originalFilename, opti
         console.log('ℹ️ Texto já está em português, pulando tradução')
         progress?.({ type: 'log', message: 'Texto já está em português' })
       }
-    }
-
-    if (translateToPt && useFixedLayout) {
-      console.log('📖 Tradução + Fixed Layout: renderizando sem texto e traduzindo')
-      progress?.({ type: 'log', message: 'Modo Fixed Layout com tradução ativado' })
-      progress?.({ type: 'log', message: 'Renderizando páginas sem texto original...' })
-
-      // 1. Renderiza páginas removendo texto original
-      console.time('render-pages-no-text')
-      const renderResult = await renderPdfPagesWithoutText(pdfPath, {
-        scale: 2.0,
-        progress: (msg) => {
-          console.log(msg)
-          progress?.({ type: 'log', message: msg })
-        }
-      })
-      console.timeEnd('render-pages-no-text')
-
-      let { pages, assetsDir } = renderResult
-      console.log(`✅ ${pages.length} páginas renderizadas sem texto`)
-
-      // 2. Traduz os textos extraídos
-      if (detectedLang !== 'pt') {
-        console.log('🌐 Traduzindo textos para português...')
-        console.time('translate-texts')
-        pages = await translatePagesText(pages, {
-          targetLang: 'pt',
-          sourceLang: 'auto',
-          progress: progress
-        })
-        console.timeEnd('translate-texts')
-        console.log('✅ Tradução concluída')
-      } else {
-        console.log('ℹ️ Texto já em português, copiando para translatedText')
-        // Copia texto original para translatedText
-        for (const page of pages) {
-          for (const item of page.textItems) {
-            item.translatedText = item.text
-          }
-        }
-      }
-
-      // 3. Define capa como primeira página se não fornecida
-      if (!coverPath && pages.length > 0) {
-        coverPath = pages[0].imagePath
-        console.log('📔 Capa definida pela primeira página')
-      }
-
-      // 4. Gera EPUB Fixed Layout com texto traduzido sobreposto
-      console.log('📚 Gerando EPUB Fixed Layout com texto traduzido...')
-      progress?.({ type: 'phase', phase: 'generating' })
-      progress?.({ type: 'log', message: 'Montando estrutura EPUB com texto traduzido...' })
-
-      console.time('epub-gen')
-      await generateFixedLayoutEpub({
-        title,
-        author: 'Autor Desconhecido',
-        publisher: 'Conversor PDF-EPUB (Fixed Layout Traduzido)',
-        language: 'pt',
-        pages: pages,
-        coverImagePath: coverPath
-      }, epubPath)
-      console.timeEnd('epub-gen')
-
-      console.timeEnd('pdf-total')
-      console.log('✨ EPUB Fixed Layout traduzido gerado com sucesso!')
-      progress?.({ type: 'phase', phase: 'complete' })
-      progress?.({ type: 'log', message: 'Conversão concluída!' })
-
-      return { epubPath, assetsDir }
     }
 
     // MODO REFLOW COM RECONSTRUÇÃO INTELIGENTE DE LAYOUT

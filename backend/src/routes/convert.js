@@ -173,12 +173,9 @@ router.post('/convert', (req, res, next) => {
     const translate = req.query.translate
       ? ['true', '1', 'yes', 'on'].includes(String(req.query.translate).toLowerCase())
       : false
-    const useFixedLayout = req.query.useFixedLayout
-      ? ['true', '1', 'yes', 'on'].includes(String(req.query.useFixedLayout).toLowerCase())
-      : true // Fixed Layout é padrão
 
     console.log('📄 [CONVERT] Arquivo recebido:', pdfFile.originalname, 'tamanho:', pdfFile.size, 'bytes')
-    console.log('📄 [CONVERT] Configuração: outputFormat=%s, fastMode=%s, keepImages=%s, extractImages=%s, translate=%s, useFixedLayout=%s', outputFormat, fastMode, keepImages, extractImages, translate, useFixedLayout)
+    console.log('📄 [CONVERT] Configuração: outputFormat=%s, fastMode=%s, keepImages=%s, extractImages=%s, translate=%s', outputFormat, fastMode, keepImages, extractImages, translate)
     if (jobId) {
       console.log('📡 [CONVERT] Emitindo progresso para jobId:', jobId)
       emitProgress(jobId, { type: 'log', message: `Arquivo recebido: ${pdfFile.originalname}` })
@@ -263,7 +260,6 @@ router.post('/convert', (req, res, next) => {
       coverPath,
       keepImages: extractImages, // usa extractImages como keepImages
       translate,
-      useFixedLayout,
       progress: jobId ? (evt) => emitProgress(jobId, evt) : null
     })
     console.log('⬅️ Retorno convertPdfToEpub')
