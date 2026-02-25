@@ -83,8 +83,6 @@ export default function Home() {
 
   return (
     <div className="page-wrapper">
-      <h1 className="main-title">Conversor PDF</h1>
-
       <ProgressViewer
         isConverting={isConverting}
         conversionPhase={progress.conversionPhase}
